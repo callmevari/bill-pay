@@ -1,0 +1,17 @@
+{
+  "name": "bill-pay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Accounts payable workspace inspired by Ramp Bill Pay.",
+  "packageManager": "pnpm@11.3.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "backend:dev": "pnpm --filter backend run dev",
+    "backend:build": "pnpm --filter backend run build",
+    "backend:test": "pnpm --filter backend run test",
+    "frontend:dev": "pnpm --filter frontend run dev",
+    "frontend:build": "pnpm --filter frontend run build"
+  }
+}
