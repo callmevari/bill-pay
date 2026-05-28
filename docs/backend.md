@@ -20,8 +20,8 @@ Pinned to **Prisma 6.x** (`prisma` + `@prisma/client` both `^6`). Prisma 7 (late
 - **Money**: `Decimal(12, 2)`. Up to ~$10B per row. String on the wire to avoid float drift.
 - **Currency**: stored per Bill and Payment, defaults to `"USD"`. Makes amounts unambiguous in CSV exports.
 - **Timestamps**: `createdAt` and `updatedAt` on every mutable model. `ActivityLog` is append-only and only has `createdAt`.
-- **Archive**: non-destructive via `archivedAt` on `Bill` and `Vendor`. Setting it removes the row from the active queue; clearing it reactivates.
-- **Indexes**: single-column on commonly filtered/sorted paths (`status`, `vendorId`, `dueDate`, `createdAt`, `archivedAt`). Compound indexes added only when profiling justifies it.
+- **Archive**: non-destructive via `archivedAt` on `Bill`. Setting it removes the row from the active queue; clearing it reactivates. Vendors have no archive — they are hard-deleted, guarded by `409 VENDOR_HAS_BILLS` when bills still reference them.
+- **Indexes**: single-column on commonly filtered/sorted paths (`status`, `dueDate`, `createdAt`, `archivedAt`). Filtering `Bill` by `vendorId` is served by the leftmost prefix of the `(vendorId, invoiceNumber)` compound unique, so no separate single-column index is added. Further compound indexes added only when profiling justifies it.
 
 ### Key design calls
 

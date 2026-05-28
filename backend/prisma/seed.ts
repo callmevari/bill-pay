@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   ActivityEntityType,
   ApprovalStatus,
@@ -12,6 +13,7 @@ import {
 import { SEED_USER_IDS } from './seed-ids';
 
 const prisma = new PrismaClient();
+const logger = new Logger('Seed');
 
 const NOW = new Date();
 
@@ -790,15 +792,10 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
   const payment = await prisma.payment.create({
     data: {
       billId: bill.id,
-      status: paymentStatusFor(spec),
+      status: PaymentStatus.UNSCHEDULED,
       method: paymentMethod,
       amount: dec(spec.amount),
       currency: 'USD',
-      scheduledFor:
-        spec.scheduledDaysAhead !== undefined ? daysAhead(spec.scheduledDaysAhead) : null,
-      initiatedAt:
-        spec.initiatedDaysAgo !== undefined ? daysAgo(spec.initiatedDaysAgo) : null,
-      paidAt: spec.paidDaysAgo !== undefined ? daysAgo(spec.paidDaysAgo) : null,
       createdAt: approvedAt,
     },
   });
@@ -824,6 +821,14 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
     spec.status === BillStatus.PAID
   ) {
     const scheduledAt = approvedAt;
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: PaymentStatus.SCHEDULED,
+        scheduledFor:
+          spec.scheduledDaysAhead !== undefined ? daysAhead(spec.scheduledDaysAhead) : null,
+      },
+    });
     await logPaymentTransition(
       payment.id,
       'payment.scheduled',
@@ -842,6 +847,10 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
 
   if (spec.status === BillStatus.PAID && spec.initiatedDaysAgo !== undefined) {
     const initiatedAt = daysAgo(spec.initiatedDaysAgo);
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: PaymentStatus.INITIATED, initiatedAt },
+    });
     await logPaymentTransition(
       payment.id,
       'payment.released',
@@ -853,6 +862,10 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
 
   if (spec.status === BillStatus.PAID && spec.paidDaysAgo !== undefined) {
     const paidAt = daysAgo(spec.paidDaysAgo);
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: PaymentStatus.PAID, paidAt },
+    });
     await logPaymentTransition(
       payment.id,
       'payment.marked_as_paid',
@@ -867,19 +880,6 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       BillStatus.PAID,
       paidAt,
     );
-  }
-}
-
-function paymentStatusFor(spec: BillSpec): PaymentStatus {
-  switch (spec.status) {
-    case BillStatus.APPROVED:
-      return PaymentStatus.UNSCHEDULED;
-    case BillStatus.SCHEDULED:
-      return PaymentStatus.SCHEDULED;
-    case BillStatus.PAID:
-      return PaymentStatus.PAID;
-    default:
-      return PaymentStatus.UNSCHEDULED;
   }
 }
 
@@ -932,13 +932,13 @@ async function logPaymentTransition(
 }
 
 async function main(): Promise<void> {
-  console.log('Wiping existing data...');
+  logger.log('Wiping existing data...');
   await wipe();
-  console.log('Seeding users...');
+  logger.log('Seeding users...');
   await seedUsers();
-  console.log('Seeding vendors...');
+  logger.log('Seeding vendors...');
   const vendorIds = await seedVendors();
-  console.log('Seeding bills...');
+  logger.log('Seeding bills...');
   await seedBills(vendorIds);
 
   const counts = {
@@ -950,12 +950,12 @@ async function main(): Promise<void> {
     payments: await prisma.payment.count(),
     activity: await prisma.activityLog.count(),
   };
-  console.log('Seed complete:', counts);
+  logger.log(`Seed complete: ${JSON.stringify(counts)}`);
 }
 
 main()
   .catch((error) => {
-    console.error(error);
+    logger.error('Seed failed', error instanceof Error ? error.stack : String(error));
     process.exit(1);
   })
   .finally(() => {
