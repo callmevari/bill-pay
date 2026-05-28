@@ -1,0 +1,199 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = []
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+/// Role-based access control. Resolved from the x-user-id header.
+enum Role {
+  ADMIN
+  APPROVER
+  VIEWER
+}
+
+/// Bill lifecycle. See docs/backend.md → Lifecycle and state machines.
+enum BillStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SCHEDULED
+  PAID
+  REJECTED
+  ARCHIVED
+}
+
+/// Payment lifecycle. See docs/backend.md → Lifecycle and state machines.
+enum PaymentStatus {
+  UNSCHEDULED
+  SCHEDULED
+  INITIATED
+  PAID
+  FAILED
+  CANCELED
+}
+
+enum PaymentMethod {
+  ACH
+  WIRE
+  CHECK
+  CARD
+  OFF_PLATFORM
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Discriminator on ActivityLog for the polymorphic entity reference.
+enum ActivityEntityType {
+  BILL
+  PAYMENT
+  VENDOR
+}
+
+// ============================================================================
+// Models
+// ============================================================================
+
+/// Seeded user. One row per role in the MVP.
+model User {
+  id        String   @id @default(cuid(2))
+  name      String
+  email     String   @unique
+  role      Role
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  billsCreated Bill[]        @relation("BillCreatedBy")
+  approvals    Approval[]
+  activity     ActivityLog[]
+}
+
+model Vendor {
+  id                   String         @id @default(cuid(2))
+  name                 String
+  email                String?
+  defaultPaymentMethod PaymentMethod?
+  streetAddress        String?
+  city                 String?
+  state                String?
+  postalCode           String?
+  country              String?
+  notes                String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  bills Bill[]
+
+  @@index([name])
+}
+
+/// Invoice owed to a vendor. Owns line items and spawns one Payment when approved.
+model Bill {
+  id            String     @id @default(cuid(2))
+  invoiceNumber String
+  status        BillStatus @default(DRAFT)
+  vendorId      String
+  vendor        Vendor     @relation(fields: [vendorId], references: [id])
+  createdById   String
+  createdBy     User       @relation("BillCreatedBy", fields: [createdById], references: [id])
+  description   String?
+  amount        Decimal    @db.Decimal(12, 2)
+  currency      String     @default("USD")
+  invoiceDate   DateTime
+  dueDate       DateTime
+  archivedAt    DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  lineItems BillLineItem[]
+  approvals Approval[]
+  payment   Payment?
+
+  @@unique([vendorId, invoiceNumber])
+  @@index([status])
+  @@index([dueDate])
+  @@index([createdAt])
+  @@index([archivedAt])
+}
+
+model BillLineItem {
+  id          String   @id @default(cuid(2))
+  billId      String
+  bill        Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Decimal  @db.Decimal(12, 2)
+  unitPrice   Decimal  @db.Decimal(12, 2)
+  total       Decimal  @db.Decimal(12, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([billId])
+}
+
+/// Approval row tied to a bill. Single-step in the MVP.
+model Approval {
+  id         String         @id @default(cuid(2))
+  billId     String
+  bill       Bill           @relation(fields: [billId], references: [id], onDelete: Cascade)
+  approverId String
+  approver   User           @relation(fields: [approverId], references: [id])
+  status     ApprovalStatus @default(PENDING)
+  notes      String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@index([billId])
+  @@index([approverId])
+  @@index([status])
+}
+
+model Payment {
+  id            String        @id @default(cuid(2))
+  billId        String        @unique
+  bill          Bill          @relation(fields: [billId], references: [id])
+  status        PaymentStatus @default(UNSCHEDULED)
+  method        PaymentMethod
+  amount        Decimal       @db.Decimal(12, 2)
+  currency      String        @default("USD")
+  scheduledFor  DateTime?
+  initiatedAt   DateTime?
+  paidAt        DateTime?
+  failedAt      DateTime?
+  canceledAt    DateTime?
+  failureReason String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([status])
+  @@index([scheduledFor])
+  @@index([createdAt])
+}
+
+/// Append-only audit trail. Polymorphic via (entityType, entityId).
+model ActivityLog {
+  id         String             @id @default(cuid(2))
+  entityType ActivityEntityType
+  entityId   String
+  actorId    String
+  actor      User               @relation(fields: [actorId], references: [id])
+  actorRole  Role
+  action     String
+  fromStatus String?
+  toStatus   String?
+  metadata   Json?
+  createdAt  DateTime           @default(now())
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId])
+}

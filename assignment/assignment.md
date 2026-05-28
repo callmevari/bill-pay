@@ -4,7 +4,7 @@
 
 Build an end-to-end accounts payable product inspired by a modern product like Ramp Bill Pay.
 
-Use `ramp-bill-pay-docs.md` as the reference for feature details.
+Use `docs-example.md` as the reference for feature details. Quality practices for a strong submission live in `guide.md`.
 
 The goal is to quickly understand the product, identify the core workflows, define a sensible MVP scope, and build it end-to-end.
 
@@ -28,7 +28,11 @@ Also include a short `README.md` covering:
 - setup instructions
 - key architecture and data model decisions
 
+Aim for as many relevant, well-executed features as possible, with a polished design and strong UX/UI, clean and understandable implementation, and a working application that runs locally with clear instructions. More scope is better when each addition is stable, useful, and consistent with the rest of the product. Unfinished features are not.
+
 ## Evaluation Criteria
+
+Priorities, in order: reviewer clarity, product judgment, working software, and a polished end-to-end experience.
 
 The submission will be evaluated based on:
 
