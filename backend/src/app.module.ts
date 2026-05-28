@@ -5,9 +5,10 @@ import { AuthModule } from './auth/auth.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { VendorsModule } from './vendors/vendors.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, HealthModule],
+  imports: [PrismaModule, AuthModule, HealthModule, VendorsModule],
   providers: [
     {
       provide: APP_FILTER,
