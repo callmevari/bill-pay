@@ -126,6 +126,20 @@ Before any slice is "done": build/lint/typecheck/test pass on the touched side, 
 - The one-time **bootstrap/foundation PR** (scaffold, tooling, initial schema, docs) is the lone exception — it is a single coherent foundation and may exceed these limits. Every later PR obeys them.
 - Push to update an open PR rather than opening a new one for the same slice.
 
+### PR bodies
+
+Every PR body follows the same standard structure, auto-filled from `.github/pull_request_template.md`, so reviewers read every PR the same way:
+
+- **Title** — Conventional Commit style, under 70 chars (e.g. `feat(vendors): add CRUD with search and delete guard`).
+- **`## Summary`** *(required)* — what the PR does and why, in 1-3 sentences. Lead with the behavioural change, not the file list.
+- **`## Changes`** *(required)* — notable changes as bullets.
+- **`## Testing`** *(required)* — a checklist of how it was verified (commands run, Bruno requests, golden-path and role checks). State explicitly anything not exercised.
+- **`## Screenshots`** *(conditional)* — before/after for UI changes; delete the section otherwise.
+- **`## Breaking changes / Notes`** *(conditional)* — migrations, risks, follow-ups; delete when none.
+- **`Closes #`** *(conditional)* — link the issue/ticket the PR resolves.
+
+Delete conditional sections that don't apply rather than leaving them empty.
+
 ## Communication
 
 Be concise. Explain decisions briefly. When uncertain, propose the simplest safe option. Ask before expanding scope. Respond in the language the human writes in (Spanish or English).
