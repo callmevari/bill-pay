@@ -1,0 +1,13 @@
+headers {
+  x-user-id: {{userId}}
+}
+
+docs {
+  Bill Pay API collection.
+
+  Environments are named `<stage>-<role>` (e.g. `local-admin`,
+  `prod-approver`). The stage controls `baseUrl`; the role controls
+  `x-user-id` (collection-level header below). Seed user IDs are
+  deterministic across deployments, so the same `<role>` selector works
+  against any stage that ran the canonical seed.
+}
