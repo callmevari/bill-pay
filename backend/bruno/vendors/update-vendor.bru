@@ -1,0 +1,21 @@
+meta {
+  name: Update vendor
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/vendors/{{vendorId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "notes": "Updated via Bruno"
+  }
+}
+
+docs {
+  Admin only. Partial update — send any subset of the create fields.
+}

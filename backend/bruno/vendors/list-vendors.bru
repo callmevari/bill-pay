@@ -1,0 +1,22 @@
+meta {
+  name: List vendors
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/vendors?page=1&pageSize=25&sort=name
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  pageSize: 25
+  sort: name
+}
+
+docs {
+  Paginated vendor list. Add ?q=<term> for free-text search on name/email.
+  Readable by all roles.
+}
