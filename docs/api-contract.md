@@ -106,7 +106,7 @@ Paginated list with filters and sorts.
 - `page`, `pageSize` (shared pagination defaults).
 - `status` — comma-separated `BillStatus` values (e.g. `APPROVED,SCHEDULED`). Unknown values → `400 VALIDATION_ERROR`.
 - `vendorId` — CUID v2.
-- `minAmount`, `maxAmount` — decimal strings (`"0,2"` digits).
+- `minAmount`, `maxAmount` — non-negative decimal strings with up to 10 integer digits and up to 2 decimal digits (bounded to the `Decimal(12, 2)` columns).
 - `dueDateFrom`, `dueDateTo` — ISO-8601 timestamps; inclusive.
 - `paymentMethod` — `ACH | WIRE | CHECK | CARD | OFF_PLATFORM`. Filters by the linked `Payment.method`; bills without a payment are excluded.
 - `q` — free-text, case-insensitive, matches `invoiceNumber`, `description`, or `vendor.name`.

@@ -1,12 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsDecimal,
   IsISO8601,
   IsOptional,
   IsString,
   MaxLength,
   ValidateIf,
 } from 'class-validator';
+
+import { IsDecimal12_2 } from '../../common/dto/decimal-string';
 
 // Omits `vendorId` and `invoiceNumber` (immutable post-create) and
 // `lineItems` (has its own sub-resource). Each remaining non-null field
@@ -22,8 +23,7 @@ export class UpdateBillDto {
 
   @ApiPropertyOptional({ example: '12480.55' })
   @ValidateIf((_, value) => value !== undefined)
-  @IsString()
-  @IsDecimal({ decimal_digits: '0,2' })
+  @IsDecimal12_2()
   amount?: string;
 
   @ApiPropertyOptional({ example: 'USD' })

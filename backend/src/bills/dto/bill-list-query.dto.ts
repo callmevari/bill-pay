@@ -1,13 +1,8 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentMethod } from '@prisma/client';
-import {
-  IsDecimal,
-  IsEnum,
-  IsISO8601,
-  IsOptional,
-  IsString,
-} from 'class-validator';
+import { IsEnum, IsISO8601, IsOptional, IsString } from 'class-validator';
 
+import { IsDecimal12_2 } from '../../common/dto/decimal-string';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 
 export const BILL_SORT_FIELDS = [
@@ -38,14 +33,12 @@ export class BillListQueryDto extends PaginationQueryDto {
 
   @ApiPropertyOptional({ example: '100.00' })
   @IsOptional()
-  @IsString()
-  @IsDecimal({ decimal_digits: '0,2' })
+  @IsDecimal12_2()
   minAmount?: string;
 
   @ApiPropertyOptional({ example: '10000.00' })
   @IsOptional()
-  @IsString()
-  @IsDecimal({ decimal_digits: '0,2' })
+  @IsDecimal12_2()
   maxAmount?: string;
 
   @ApiPropertyOptional({ format: 'date-time' })
