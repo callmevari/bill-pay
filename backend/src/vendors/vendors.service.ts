@@ -90,7 +90,23 @@ export class VendorsService {
         details: { billCount },
       });
     }
-    await this.prisma.vendor.delete({ where: { id } });
+    try {
+      await this.prisma.vendor.delete({ where: { id } });
+    } catch (error) {
+      // Race: a bill may be created for this vendor between the count above
+      // and the delete below. Translate the FK violation so the contract
+      // still returns VENDOR_HAS_BILLS instead of FOREIGN_KEY_VIOLATION.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2003'
+      ) {
+        throw new ConflictException({
+          code: ErrorCode.VENDOR_HAS_BILLS,
+          message: 'Cannot delete a vendor that still has bills.',
+        });
+      }
+      throw error;
+    }
   }
 
   private async ensureExists(id: string): Promise<void> {
