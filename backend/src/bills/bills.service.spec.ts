@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { BillStatus, Prisma, Role } from '@prisma/client';
 
@@ -114,6 +118,28 @@ describe('BillsService', () => {
           actor,
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('throws 404 VENDOR_NOT_FOUND when vendorId does not reference a vendor', async () => {
+      const prismaWithVendor = prisma as PrismaMock & {
+        vendor: { findUnique: jest.Mock };
+      };
+      prismaWithVendor.vendor = {
+        findUnique: jest.fn().mockResolvedValue(null),
+      };
+
+      await expect(
+        service.create(
+          {
+            invoiceNumber: 'INV-Y',
+            vendorId: 'asd',
+            amount: '100.00',
+            invoiceDate: '2026-05-01T00:00:00.000Z',
+            dueDate: '2026-05-31T00:00:00.000Z',
+          },
+          actor,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

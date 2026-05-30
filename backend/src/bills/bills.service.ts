@@ -90,34 +90,52 @@ export class BillsService {
     const invoiceDate = new Date(dto.invoiceDate);
     const dueDate = new Date(dto.dueDate);
     this.ensureDateOrder(invoiceDate, dueDate);
+    await this.ensureVendorExists(dto.vendorId);
 
     const bill = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.bill.create({
-        data: {
-          invoiceNumber: dto.invoiceNumber,
-          vendorId: dto.vendorId,
-          createdById: actor.id,
-          description: dto.description ?? null,
-          amount: new Prisma.Decimal(dto.amount),
-          currency: dto.currency ?? 'USD',
-          invoiceDate,
-          dueDate,
-          lineItems:
-            dto.lineItems && dto.lineItems.length > 0
-              ? {
-                  create: dto.lineItems.map((li) => ({
-                    description: li.description,
-                    quantity: new Prisma.Decimal(li.quantity),
-                    unitPrice: new Prisma.Decimal(li.unitPrice),
-                    total: new Prisma.Decimal(li.quantity).mul(
-                      new Prisma.Decimal(li.unitPrice),
-                    ),
-                  })),
-                }
-              : undefined,
-        },
-        include: billInclude,
-      });
+      let created;
+      try {
+        created = await tx.bill.create({
+          data: {
+            invoiceNumber: dto.invoiceNumber,
+            vendorId: dto.vendorId,
+            createdById: actor.id,
+            description: dto.description ?? null,
+            amount: new Prisma.Decimal(dto.amount),
+            currency: dto.currency ?? 'USD',
+            invoiceDate,
+            dueDate,
+            lineItems:
+              dto.lineItems && dto.lineItems.length > 0
+                ? {
+                    create: dto.lineItems.map((li) => ({
+                      description: li.description,
+                      quantity: new Prisma.Decimal(li.quantity),
+                      unitPrice: new Prisma.Decimal(li.unitPrice),
+                      total: new Prisma.Decimal(li.quantity).mul(
+                        new Prisma.Decimal(li.unitPrice),
+                      ),
+                    })),
+                  }
+                : undefined,
+          },
+          include: billInclude,
+        });
+      } catch (error) {
+        // Race: the vendor may have been deleted between the pre-check
+        // and this insert. Translate the FK violation so the contract
+        // still returns VENDOR_NOT_FOUND rather than a raw Prisma code.
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2003'
+        ) {
+          throw new NotFoundException({
+            code: ErrorCode.VENDOR_NOT_FOUND,
+            message: 'Vendor not found.',
+          });
+        }
+        throw error;
+      }
 
       await this.logBillActivity(tx, created.id, actor, 'bill.created', {
         vendorId: created.vendorId,
@@ -287,6 +305,19 @@ export class BillsService {
   }
 
   // ---- helpers ------------------------------------------------------
+
+  private async ensureVendorExists(vendorId: string): Promise<void> {
+    const vendor = await this.prisma.vendor.findUnique({
+      where: { id: vendorId },
+      select: { id: true },
+    });
+    if (!vendor) {
+      throw new NotFoundException({
+        code: ErrorCode.VENDOR_NOT_FOUND,
+        message: 'Vendor not found.',
+      });
+    }
+  }
 
   private ensureDateOrder(invoiceDate: Date, dueDate: Date): void {
     if (dueDate.getTime() < invoiceDate.getTime()) {

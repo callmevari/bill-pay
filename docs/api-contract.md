@@ -170,7 +170,7 @@ Creates a bill in `DRAFT`. The acting user is recorded as `createdById`. Line it
 
 `currency` is a 3-letter uppercase ISO 4217 code (e.g. `"USD"`) and defaults to `"USD"` when omitted. `dueDate` must be on or after `invoiceDate`.
 
-**201** → bare `BillResponse`. **400 VALIDATION_ERROR** on invalid body — including `null` on any required-non-null field, decimals outside `Decimal(12, 2)`, currency not matching `^[A-Z]{3}$`, or `dueDate < invoiceDate`. **403 INSUFFICIENT_PERMISSIONS** for non-Admin. **409 UNIQUE_CONSTRAINT_VIOLATION** when `(vendorId, invoiceNumber)` already exists. **409 FOREIGN_KEY_VIOLATION** if `vendorId` does not exist.
+**201** → bare `BillResponse`. **400 VALIDATION_ERROR** on invalid body — including `null` on any required-non-null field, decimals outside `Decimal(12, 2)`, currency not matching `^[A-Z]{3}$`, or `dueDate < invoiceDate`. **403 INSUFFICIENT_PERMISSIONS** for non-Admin. **404 VENDOR_NOT_FOUND** if `vendorId` does not reference an existing vendor (pre-checked and also re-translated from a Prisma FK race). **409 UNIQUE_CONSTRAINT_VIOLATION** when `(vendorId, invoiceNumber)` already exists.
 
 ### `PATCH /bills/:id` — Admin only
 
@@ -207,7 +207,7 @@ Partial update. `quantity`, `unitPrice`, and `description` are non-null; `null` 
 
 ### Error codes (Bills)
 
-`VALIDATION_ERROR` (400) · `NOT_FOUND` (404) · `BILL_LINE_ITEM_NOT_FOUND` (404) · `BILL_NOT_EDITABLE` (409) · `UNIQUE_CONSTRAINT_VIOLATION` (409) · `FOREIGN_KEY_VIOLATION` (409) — plus the auth/role codes shared across the API.
+`VALIDATION_ERROR` (400) · `NOT_FOUND` (404) · `VENDOR_NOT_FOUND` (404) · `BILL_LINE_ITEM_NOT_FOUND` (404) · `BILL_NOT_EDITABLE` (409) · `UNIQUE_CONSTRAINT_VIOLATION` (409) — plus the auth/role codes shared across the API.
 
 ### Activity log
 
