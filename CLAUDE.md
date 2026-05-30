@@ -108,6 +108,15 @@ Instant red flags. None ship.
 
 Before any slice is "done": build/lint/typecheck/test pass on the touched side, the golden path of the touched workflow has been exercised manually, `docs/api-contract.md` matches the live surface, README setup still runs from a clean clone. Per-side commands live in the agent playbooks.
 
+Additionally, before declaring a module done the engineer who owns it runs a reviewer pass on the diff — **inline** (an adversarial pass against `.claude/agents/reviewer.md`, covering boundary inputs, null on required-non-null fields, error-envelope shape on every non-happy path, and role gating) for simple CRUD modules, and **as a spawned `reviewer` subagent** for anything touching a state machine, lifecycle transitions, bulk operations, or cross-module side effects. Any BLOCKER or MAJOR finding is fixed before the PR opens; MINOR / NIT findings either land in the same PR or are called out explicitly in the PR body.
+
+| Module type | Reviewer pass |
+|---|---|
+| Simple CRUD (Vendors-like) | inline |
+| Lifecycle / state machine (Bills lifecycle, Approvals, Payments) | spawn `reviewer` subagent |
+| Bulk / partial-failure surfaces | spawn `reviewer` subagent |
+| Docs / config | inline |
+
 ## Git commits
 
 - Follow the Conventional Commits 1.0.0 specification.

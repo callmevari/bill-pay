@@ -20,6 +20,11 @@
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": true,
     "strictBindCallApply": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    // Response DTOs are Swagger/type spec classes populated by mappers,
+    // never via a constructor. Keep this off so they don't need `!` on
+    // every property. Re-enable if we introduce domain classes with
+    // real constructor bodies that need initialization checking.
+    "strictPropertyInitialization": false
   }
 }

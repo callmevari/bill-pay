@@ -1,0 +1,39 @@
+meta {
+  name: List bills
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/bills?page=1&pageSize=25&sort=-createdAt
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  pageSize: 25
+  sort: -createdAt
+  ~status: APPROVED,SCHEDULED
+  ~vendorId: {{vendorId}}
+  ~minAmount: 100.00
+  ~maxAmount: 10000.00
+  ~dueDateFrom: 2026-05-01T00:00:00.000Z
+  ~dueDateTo: 2026-12-31T23:59:59.000Z
+  ~paymentMethod: ACH
+  ~q: stripe
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && Array.isArray(body.data) && body.data.length > 0) {
+    bru.setVar('billId', body.data[0].id);
+  }
+}
+
+docs {
+  Paginated bills list. The disabled (`~`) params show every supported
+  filter; enable any combination. Stores the first bill's id in the
+  `billId` var so the Get/Patch requests below can run immediately.
+  Readable by all roles.
+}

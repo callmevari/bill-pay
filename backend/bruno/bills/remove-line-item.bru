@@ -1,0 +1,17 @@
+meta {
+  name: Remove line item
+  type: http
+  seq: 8
+}
+
+delete {
+  url: {{baseUrl}}/bills/{{billId}}/line-items/{{lineItemId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Admin only. 204 on success. 404 BILL_LINE_ITEM_NOT_FOUND if the line
+  item id does not belong to the bill. 409 BILL_NOT_EDITABLE on terminal
+  bills.
+}
