@@ -1,0 +1,23 @@
+meta {
+  name: Update line item
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/bills/{{billId}}/line-items/{{lineItemId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "quantity": "5"
+  }
+}
+
+docs {
+  Admin only. Partial update; quantity/unitPrice/description are
+  non-null so sending `null` returns 400 VALIDATION_ERROR. `total` is
+  recomputed when quantity or unitPrice changes.
+}
