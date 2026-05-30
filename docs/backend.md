@@ -122,3 +122,42 @@ Single-step in the MVP — exactly one `Approval` row per bill, created when the
 
 ---
 
+## Testing strategy
+
+Two layers, each scoped to what it actually verifies:
+
+### Unit tests (`src/**/*.spec.ts`, run with `pnpm test`)
+
+Service-level tests with `PrismaService` mocked. They cover **branching logic where the value is in the code path**, not the I/O:
+
+- Where-clause + sort parsers (allow-list violations → `400 VALIDATION_ERROR`).
+- Terminal-status edit guard (`BILL_NOT_EDITABLE` on PAID/REJECTED/ARCHIVED).
+- Cross-field date order (`dueDate >= invoiceDate`).
+- Vendor delete guard branching (no bills → success; bills → `409 VENDOR_HAS_BILLS`; missing vendor → `404`).
+- Math: `BillLineItem.total = quantity * unitPrice`.
+
+Anything that only fails when it hits a real database — FK violations, unique constraints, `Decimal(12, 2)` overflow, transaction atomicity, role-guard wiring end-to-end — is out of scope here and lives in e2e.
+
+### End-to-end tests (`test/**/*.e2e-spec.ts`, run with `pnpm test:e2e`)
+
+Boot the full Nest app with the same global wiring as `main.ts` (prefix, `ValidationPipe`, exception filter). Drive it with supertest. Use a real Prisma connection against an **isolated `test_e2e` schema** in the same Postgres container as dev (`DATABASE_URL=...?schema=test_e2e` in `backend/.env.test`). The dev `public` schema is never touched.
+
+Setup:
+
+- `backend/test/global-setup.ts` (Jest `globalSetup`) loads `.env.test` and runs `prisma migrate deploy` once before any test starts. Idempotent.
+- `backend/test/setup-env.ts` (Jest `setupFiles`) re-loads `.env.test` in each worker before the test file is imported, so the `PrismaClient` Nest creates picks up the test URL.
+- `backend/test/helpers/db.ts` exposes `resetDatabase()` (truncate all rows in dependency order) and `seedMinimalData()` (one admin + approver + viewer + vendor). Specs call them in `beforeEach` so every test starts on a clean slate.
+
+E2E coverage is deliberately narrow — we focus on contract-shape behaviour that unit tests with mocked Prisma cannot reach:
+
+- `POST /bills` with `vendorId: "asd"` → `404 VENDOR_NOT_FOUND` (FK translated, not the raw `409 FOREIGN_KEY_VIOLATION`).
+- `POST /bills` with `amount` outside `Decimal(12, 2)` → `400 VALIDATION_ERROR` (rejected at the DTO boundary).
+- `PATCH /bills/<paid>` → `409 BILL_NOT_EDITABLE` (terminal guard hit end-to-end).
+- `DELETE /vendors/<referenced>` → `409 VENDOR_HAS_BILLS` (delete guard with real FK).
+- `POST /vendors` as Viewer → `403 INSUFFICIENT_PERMISSIONS` (role guard wired through).
+- `GET /health` returns `{ ok: true }` (smoke).
+
+New endpoints add one or two e2e tests for the cases their unit tests cannot cover, not a test per branch.
+
+---
+

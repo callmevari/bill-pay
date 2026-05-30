@@ -106,7 +106,7 @@ Instant red flags. None ship.
 
 ## Quality bar (principle)
 
-Before any slice is "done": build/lint/typecheck/test pass on the touched side, the golden path of the touched workflow has been exercised manually, `docs/api-contract.md` matches the live surface, README setup still runs from a clean clone. Per-side commands live in the agent playbooks.
+Before any slice is "done": build/lint/typecheck/test (unit + e2e) pass on the touched side, the golden path of the touched workflow has been exercised manually, `docs/api-contract.md` matches the live surface, README setup still runs from a clean clone. Per-side commands live in the agent playbooks. The full testing strategy (what belongs in unit vs e2e) lives in `docs/backend.md → Testing strategy` — when a new module adds endpoints, it adds one or two e2e tests for the contract-shape cases that mocked-Prisma unit tests cannot reach (FK translations, terminal guards, decimal-overflow validation, real role-guard wiring).
 
 Additionally, before declaring a module done the engineer who owns it runs a reviewer pass on the diff — **inline** (an adversarial pass against `.claude/agents/reviewer.md`, covering boundary inputs, null on required-non-null fields, error-envelope shape on every non-happy path, and role gating) for simple CRUD modules, and **as a spawned `reviewer` subagent** for anything touching a state machine, lifecycle transitions, bulk operations, or cross-module side effects. Any BLOCKER or MAJOR finding is fixed before the PR opens; MINOR / NIT findings either land in the same PR or are called out explicitly in the PR body.
 
