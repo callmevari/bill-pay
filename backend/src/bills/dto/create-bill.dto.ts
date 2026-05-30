@@ -8,9 +8,11 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
+import { IsCurrencyCode } from '../../common/dto/currency';
 import { IsDecimal12_2 } from '../../common/dto/decimal-string';
 import { CreateBillLineItemDto } from './create-bill-line-item.dto';
 
@@ -44,9 +46,8 @@ export class CreateBillDto {
   amount: string;
 
   @ApiPropertyOptional({ default: 'USD', example: 'USD' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(3)
+  @ValidateIf((_, value) => value !== undefined)
+  @IsCurrencyCode()
   currency?: string;
 
   @ApiProperty({ format: 'date-time', example: '2026-05-01T00:00:00.000Z' })

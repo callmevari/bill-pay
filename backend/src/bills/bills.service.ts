@@ -87,6 +87,10 @@ export class BillsService {
   // ---- create -------------------------------------------------------
 
   async create(dto: CreateBillDto, actor: AuthUser): Promise<BillResponseDto> {
+    const invoiceDate = new Date(dto.invoiceDate);
+    const dueDate = new Date(dto.dueDate);
+    this.ensureDateOrder(invoiceDate, dueDate);
+
     const bill = await this.prisma.$transaction(async (tx) => {
       const created = await tx.bill.create({
         data: {
@@ -96,8 +100,8 @@ export class BillsService {
           description: dto.description ?? null,
           amount: new Prisma.Decimal(dto.amount),
           currency: dto.currency ?? 'USD',
-          invoiceDate: new Date(dto.invoiceDate),
-          dueDate: new Date(dto.dueDate),
+          invoiceDate,
+          dueDate,
           lineItems:
             dto.lineItems && dto.lineItems.length > 0
               ? {
@@ -144,6 +148,16 @@ export class BillsService {
     if (dto.invoiceDate !== undefined)
       data.invoiceDate = new Date(dto.invoiceDate);
     if (dto.dueDate !== undefined) data.dueDate = new Date(dto.dueDate);
+
+    if (dto.invoiceDate !== undefined || dto.dueDate !== undefined) {
+      const nextInvoiceDate =
+        dto.invoiceDate !== undefined
+          ? new Date(dto.invoiceDate)
+          : current.invoiceDate;
+      const nextDueDate =
+        dto.dueDate !== undefined ? new Date(dto.dueDate) : current.dueDate;
+      this.ensureDateOrder(nextInvoiceDate, nextDueDate);
+    }
 
     if (Object.keys(data).length === 0) {
       return toBillResponse(current);
@@ -273,6 +287,15 @@ export class BillsService {
   }
 
   // ---- helpers ------------------------------------------------------
+
+  private ensureDateOrder(invoiceDate: Date, dueDate: Date): void {
+    if (dueDate.getTime() < invoiceDate.getTime()) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'dueDate must be on or after invoiceDate.',
+      });
+    }
+  }
 
   private async ensureExists(id: string): Promise<void> {
     const exists = await this.prisma.bill.findUnique({

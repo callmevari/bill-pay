@@ -7,6 +7,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 
+import { IsCurrencyCode } from '../../common/dto/currency';
 import { IsDecimal12_2 } from '../../common/dto/decimal-string';
 
 // Omits `vendorId` and `invoiceNumber` (immutable post-create) and
@@ -28,8 +29,7 @@ export class UpdateBillDto {
 
   @ApiPropertyOptional({ example: 'USD' })
   @ValidateIf((_, value) => value !== undefined)
-  @IsString()
-  @MaxLength(3)
+  @IsCurrencyCode()
   currency?: string;
 
   @ApiPropertyOptional({ format: 'date-time' })

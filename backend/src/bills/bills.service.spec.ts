@@ -85,6 +85,36 @@ describe('BillsService', () => {
         ).rejects.toBeInstanceOf(ConflictException);
       },
     );
+
+    it('throws 400 VALIDATION_ERROR when patched dueDate is before invoiceDate', async () => {
+      prisma.bill.findUnique.mockResolvedValue({
+        id: 'b1',
+        status: BillStatus.DRAFT,
+        invoiceDate: new Date('2026-06-01T00:00:00.000Z'),
+        dueDate: new Date('2026-06-30T00:00:00.000Z'),
+        lineItems: [],
+      });
+      await expect(
+        service.update('b1', { dueDate: '2026-05-01T00:00:00.000Z' }, actor),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('create', () => {
+    it('throws 400 VALIDATION_ERROR when dueDate is before invoiceDate', async () => {
+      await expect(
+        service.create(
+          {
+            invoiceNumber: 'INV-X',
+            vendorId: 'v1',
+            amount: '100.00',
+            invoiceDate: '2026-06-01T00:00:00.000Z',
+            dueDate: '2026-05-01T00:00:00.000Z',
+          },
+          actor,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
   });
 
   describe('addLineItem', () => {

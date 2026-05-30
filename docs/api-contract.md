@@ -168,17 +168,17 @@ Creates a bill in `DRAFT`. The acting user is recorded as `createdById`. Line it
 }
 ```
 
-`currency` defaults to `"USD"` when omitted.
+`currency` is a 3-letter uppercase ISO 4217 code (e.g. `"USD"`) and defaults to `"USD"` when omitted. `dueDate` must be on or after `invoiceDate`.
 
-**201** → bare `BillResponse`. **400 VALIDATION_ERROR** on invalid body (including `null` on any required-non-null field). **403 INSUFFICIENT_PERMISSIONS** for non-Admin. **409 UNIQUE_CONSTRAINT_VIOLATION** when `(vendorId, invoiceNumber)` already exists. **409 FOREIGN_KEY_VIOLATION** if `vendorId` does not exist.
+**201** → bare `BillResponse`. **400 VALIDATION_ERROR** on invalid body — including `null` on any required-non-null field, decimals outside `Decimal(12, 2)`, currency not matching `^[A-Z]{3}$`, or `dueDate < invoiceDate`. **403 INSUFFICIENT_PERMISSIONS** for non-Admin. **409 UNIQUE_CONSTRAINT_VIOLATION** when `(vendorId, invoiceNumber)` already exists. **409 FOREIGN_KEY_VIOLATION** if `vendorId` does not exist.
 
 ### `PATCH /bills/:id` — Admin only
 
 Updates an editable bill. `vendorId`, `invoiceNumber`, and line items are not patchable here — line items have their own sub-resource. `description` is the only nullable field (send `null` to clear); the others reject `null`.
 
-**Body**: any subset of `description?: string | null`, `amount?: string`, `currency?: string`, `invoiceDate?: ISO-8601`, `dueDate?: ISO-8601`.
+**Body**: any subset of `description?: string | null`, `amount?: string`, `currency?: string`, `invoiceDate?: ISO-8601`, `dueDate?: ISO-8601`. Same shape rules as create — `amount` is bounded to `Decimal(12, 2)`, `currency` must match `^[A-Z]{3}$`, and the resulting `dueDate` must remain on or after `invoiceDate`.
 
-**200** → updated `BillResponse`. **404 NOT_FOUND** if missing. **409 BILL_NOT_EDITABLE** (`details: { status }`) when the bill's status is terminal (`PAID`, `REJECTED`, or `ARCHIVED`). **403** for non-Admin.
+**200** → updated `BillResponse`. **400 VALIDATION_ERROR** on invalid body. **404 NOT_FOUND** if missing. **409 BILL_NOT_EDITABLE** (`details: { status }`) when the bill's status is terminal (`PAID`, `REJECTED`, or `ARCHIVED`). **403** for non-Admin.
 
 ### `GET /bills/:id/line-items`
 
