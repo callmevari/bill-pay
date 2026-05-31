@@ -8,7 +8,15 @@ import { config } from 'dotenv';
 // schema exists and is in sync with the current migrations. Idempotent —
 // re-running between test invocations is a no-op once tables exist.
 export default function globalSetup(): void {
-  config({ path: resolve(__dirname, '..', '.env.test'), quiet: true });
+  // `override: true` is intentional: a pre-existing DATABASE_URL in the
+  // shell or CI environment would otherwise win over `.env.test`, and
+  // `prisma migrate deploy` would run against the wrong schema — silently
+  // breaking the isolation contract the whole suite assumes.
+  config({
+    path: resolve(__dirname, '..', '.env.test'),
+    quiet: true,
+    override: true,
+  });
 
   execSync('npx prisma migrate deploy', {
     cwd: resolve(__dirname, '..'),

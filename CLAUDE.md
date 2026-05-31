@@ -87,7 +87,7 @@ Specialized agents live in `.claude/agents/`:
 
 - `backend-engineer.md` — owns `backend/`, Prisma schema/migrations/seed, `docs/api-contract.md`, backend section of root README, backend services in `docker-compose.yml`.
 - `frontend-engineer.md` — owns `frontend/`, frontend section of root README, frontend env. *(To be drafted when the frontend phase nears.)*
-- `reviewer.md` — final audits before declaring work done; reviews both sides and triages external PR reviews dropped in `docs/prs-reviews/`.
+- `reviewer.md` — final audits before declaring work done; reviews both sides and triages external PR reviews dropped in `docs/backend-pr-reviews/`.
 
 **Cross-cutting rule**: an agent that needs a change outside its scope stops and asks the human. The human is the broker between backend and frontend. This protects the API contract from silent drift.
 
