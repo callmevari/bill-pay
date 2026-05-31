@@ -174,6 +174,19 @@ When a new module adds a meaningful new shape of test (state machine transitions
 - The one-time **bootstrap/foundation PR** (scaffold, tooling, initial schema, docs) is the lone exception — it is a single coherent foundation and may exceed these limits. Every later PR obeys them.
 - Push to update an open PR rather than opening a new one for the same slice.
 
+### develop → main cadence
+
+Feature work lives on `develop`. `main` is updated by a separate `develop → main` PR at **coherent milestones** — never per feature, never only at the end. The milestones for this project, in order:
+
+| Milestone | Trigger | What lands on `main` |
+|---|---|---|
+| Backend MVP | End of Phase 7 (vendors + bills + approvals + payments + bulk + activity + exports complete) | A backend that is feature-complete and deployable standalone |
+| Frontend MVP | End of Phase 11 (full UI workflows wired) | Stack usable end-to-end |
+| Polish | End of Phase 12 (final sweep, README setup verified from a clean clone) | Reviewer-ready state |
+| Deploy | End of Phase 13 (hosted AWS deployment) | Submission state |
+
+At every milestone, open the `develop → main` PR, wait for review/Copilot like any other PR, then merge. Between milestones, `main` is intentionally behind — that is the signal that the work is in flight on `develop`.
+
 ### PR bodies
 
 Every PR body follows the same standard structure, auto-filled from `.github/pull_request_template.md`, so reviewers read every PR the same way:
