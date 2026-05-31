@@ -110,12 +110,14 @@ Before any slice is "done": build/lint/typecheck/test (unit + e2e) pass on the t
 
 Additionally, before declaring a module done the engineer who owns it runs a reviewer pass on the diff — **inline** (an adversarial pass against `.claude/agents/reviewer.md`, covering boundary inputs, null on required-non-null fields, error-envelope shape on every non-happy path, and role gating) for simple CRUD modules, and **as a spawned `reviewer` subagent** for anything touching a state machine, lifecycle transitions, bulk operations, or cross-module side effects. Any BLOCKER or MAJOR finding is fixed before the PR opens; MINOR / NIT findings either land in the same PR or are called out explicitly in the PR body.
 
-| Module type | Reviewer pass |
+| Work type | Reviewer pass |
 |---|---|
-| Simple CRUD (Vendors-like) | inline |
+| Simple business-logic CRUD (Vendors-like) | inline |
 | Lifecycle / state machine (Bills lifecycle, Approvals, Payments) | spawn `reviewer` subagent |
 | Bulk / partial-failure surfaces | spawn `reviewer` subagent |
-| Docs / config | inline |
+| **Test infrastructure / harness** (jest configs, e2e setup, isolation primitives, fixture helpers) | spawn `reviewer` subagent — concurrency, env override, parallel workers, and shared-state races are state-machine-equivalent and the author is the worst-placed reader |
+| Cross-cutting tooling (docker-compose, prisma config, build / lint config when it changes execution semantics) | spawn `reviewer` subagent |
+| Docs / config (text, simple settings without execution semantics) | inline |
 
 ## Testing
 
