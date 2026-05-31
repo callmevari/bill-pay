@@ -122,3 +122,50 @@ Single-step in the MVP — exactly one `Approval` row per bill, created when the
 
 ---
 
+## Testing strategy
+
+Two layers, each scoped to what it actually verifies:
+
+### Unit tests (`src/**/*.spec.ts`, run with `pnpm test`)
+
+Service-level tests with `PrismaService` mocked. They cover **branching logic where the value is in the code path**, not the I/O:
+
+- Where-clause + sort parsers (allow-list violations → `400 VALIDATION_ERROR`).
+- Terminal-status edit guard (`BILL_NOT_EDITABLE` on PAID/REJECTED/ARCHIVED).
+- Cross-field date order (`dueDate >= invoiceDate`).
+- Vendor delete guard branching (no bills → success; bills → `409 VENDOR_HAS_BILLS`; missing vendor → `404`).
+- Math: `BillLineItem.total = quantity * unitPrice`.
+
+Anything that only fails when it hits a real database — FK violations, unique constraints, `Decimal(12, 2)` overflow, transaction atomicity, role-guard wiring end-to-end — is out of scope here and lives in e2e.
+
+### End-to-end tests (`test/**/*.e2e-spec.ts`, run with `pnpm test:e2e`)
+
+Boot the full Nest app with the same global wiring as `main.ts` (prefix, `ValidationPipe`, exception filter). Drive it with supertest. Use a real Prisma connection against an **isolated `test_e2e` schema** in the same Postgres container as dev (`DATABASE_URL=...?schema=test_e2e` in `backend/.env.test`). The dev `public` schema is never touched.
+
+Setup:
+
+- `backend/test/global-setup.ts` (Jest `globalSetup`) loads `.env.test` and runs `prisma migrate deploy` once before any test starts. Idempotent.
+- `backend/test/setup-env.ts` (Jest `setupFiles`) re-loads `.env.test` in each worker before the test file is imported, so the `PrismaClient` Nest creates picks up the test URL.
+- `backend/test/helpers/db.ts` exposes `resetDatabase()` (truncate all rows in dependency order) and `seedMinimalData()` (one admin + approver + viewer + vendor). Specs call them in `beforeEach` so every test starts on a clean slate.
+
+E2E coverage targets the contract-shape behaviours that mocked-Prisma unit tests cannot reach. The high-level rule and per-endpoint checklist for designing the suite for any new module live in `CLAUDE.md → Testing`. Currently covered:
+
+- **Happy-path persistence (write plumbing).** `POST /bills` with full body asserts the response, then re-reads via Prisma to confirm the row + nested line-item `total`s + the `bill.created` activity-log entry are all persisted. `POST /vendors` does the same against `Vendor`. These two tests cover the bulk of the Decimal/Date/JSON/nested-write/transaction plumbing in one shot — if Phase 5/6 accidentally breaks field mapping or transaction wiring, they'll catch it.
+- **Read plumbing.** `GET /bills?status=...&sort=amount` seeds a deterministic dataset and asserts the `{data, meta}` envelope shape, the filter intersection, and the sort order against real SQL.
+- **FK translations.** `POST /bills` with `vendorId: "asd"` → `404 VENDOR_NOT_FOUND` (translated, not the raw `409 FOREIGN_KEY_VIOLATION`). One per FK field accepted in a request body.
+- **DTO-boundary overflow.** `POST /bills` with `amount` outside `Decimal(12, 2)` → `400 VALIDATION_ERROR` from the regex helper, not a 500 from Postgres.
+- **Terminal / guard transitions.** `PATCH /bills/<paid>` → `409 BILL_NOT_EDITABLE` with `details.status` end-to-end.
+- **Delete guards.** `DELETE /vendors/<referenced>` → `409 VENDOR_HAS_BILLS` with `details.billCount`.
+- **Role-guard plumbing.** `POST /vendors` as Viewer → `403 INSUFFICIENT_PERMISSIONS` — proves the guard is wired through the global pipeline.
+- **Smoke.** `GET /health` returns `{ ok: true }`.
+
+### Patterns to add as new module shapes appear
+
+When the next phase introduces a shape we haven't tested yet, codify it here so the recipe stays current.
+
+- **State machine transitions** (Phase 5, lifecycle endpoints): one e2e per legal transition (`submit-for-approval` then `approve` then `mark-as-paid`, asserting the resulting `status`, the auto-created `Payment` row, and the chain of `ActivityLog` entries) plus one e2e per **illegal** transition (e.g. `approve` on `DRAFT` → `409 BILL_INVALID_TRANSITION`).
+- **Bulk endpoints** (Phase 7): one e2e mixing valid and invalid items in the same batch and asserting the per-item result envelope (`{ id, ok, error? }`), so partial-failure visibility is preserved end-to-end.
+- **Async / job-driven flows**: not in scope for this MVP. If one ever lands, add a section.
+
+---
+

@@ -30,3 +30,12 @@ pnpm --filter backend add <pkg>       # add a dependency to one package
 ```
 
 `pnpm --filter backend dev` and `cd backend && pnpm dev` are equivalent. Packages declaring postinstall build scripts must be listed under `allowBuilds` in `pnpm-workspace.yaml` (pnpm blocks them by default); Prisma and NestJS are already allowed.
+
+## Testing
+
+Two layers:
+
+- **Unit tests** — fast, no I/O, mock `PrismaService`. Cover branching logic where the value is in code paths (sort/where parsing, terminal-edit guard, math). Run with `pnpm --filter backend test`.
+- **End-to-end tests** — boot the full Nest app, hit it with supertest, and use a real Postgres connection against an isolated `test_e2e` schema in the same Postgres container as dev. The `public` schema (dev data) is never touched. Run with `pnpm --filter backend test:e2e`. Requires Postgres to be up (`docker compose up -d postgres`). The Jest `globalSetup` loads `backend/.env.test` and applies `prisma migrate deploy` to the test schema before the first test.
+
+E2E coverage is deliberately narrow: we focus on contract-shape behaviour that unit tests with mocked Prisma can't reach — vendor FK violations translated to `404 VENDOR_NOT_FOUND`, terminal-edit guards, decimal-overflow validation, delete guards, and role enforcement. See `docs/backend.md` → Testing strategy for the full rationale.
