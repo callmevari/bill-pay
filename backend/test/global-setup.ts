@@ -8,7 +8,7 @@ import { config } from 'dotenv';
 // schema exists and is in sync with the current migrations. Idempotent —
 // re-running between test invocations is a no-op once tables exist.
 export default function globalSetup(): void {
-  config({ path: resolve(__dirname, '..', '.env.test') });
+  config({ path: resolve(__dirname, '..', '.env.test'), quiet: true });
 
   execSync('npx prisma migrate deploy', {
     cwd: resolve(__dirname, '..'),
