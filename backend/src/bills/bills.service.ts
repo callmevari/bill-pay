@@ -570,23 +570,33 @@ export class BillsService {
         PaymentStatus.FAILED,
       ];
       if (existingPayment && inFlight.includes(existingPayment.status)) {
-        await tx.payment.update({
-          where: { id: existingPayment.id },
+        // CAS the Payment status with the just-read value as predicate
+        // so a concurrent Payment lifecycle action that flipped the row
+        // between our read and our write cannot be silently overwritten.
+        const cas = await tx.payment.updateMany({
+          where: { id: existingPayment.id, status: existingPayment.status },
           data: { status: PaymentStatus.CANCELED, canceledAt: new Date() },
         });
-        await tx.activityLog.create({
-          data: {
-            entityType: ActivityEntityType.PAYMENT,
-            entityId: existingPayment.id,
-            actorId: actor.id,
-            actorRole: actor.role,
-            action: 'payment.canceled',
-            fromStatus: existingPayment.status,
-            toStatus: PaymentStatus.CANCELED,
-            metadata: { triggeredBy: 'bill.archived' },
-          },
-        });
-        cancelledPaymentId = existingPayment.id;
+        if (cas.count === 1) {
+          await tx.activityLog.create({
+            data: {
+              entityType: ActivityEntityType.PAYMENT,
+              entityId: existingPayment.id,
+              actorId: actor.id,
+              actorRole: actor.role,
+              action: 'payment.canceled',
+              fromStatus: existingPayment.status,
+              toStatus: PaymentStatus.CANCELED,
+              metadata: { triggeredBy: 'bill.archived' },
+            },
+          });
+          cancelledPaymentId = existingPayment.id;
+        }
+        // If CAS lost the race (cas.count === 0), the Payment moved to
+        // another state in parallel — let the winning transition stand
+        // and skip our cascade rather than overwriting it. The bill is
+        // still archived; the Payment audit trail belongs to whichever
+        // action got there first.
       }
 
       const metadata: Record<string, unknown> = {};

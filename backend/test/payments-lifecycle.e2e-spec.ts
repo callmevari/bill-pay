@@ -245,6 +245,64 @@ describe('Payments lifecycle (e2e)', () => {
     expect(billAfter.status).toBe(BillStatus.APPROVED);
   });
 
+  it('mark-as-paid direct from SCHEDULED (skip release): payment PAID, bill PAID', async () => {
+    const { bill, payment } = await seedBillWithPayment({
+      billStatus: BillStatus.SCHEDULED,
+      paymentStatus: PaymentStatus.SCHEDULED,
+      scheduledFor: new Date('2026-06-15T00:00:00.000Z'),
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/payments/${payment.id}/mark-as-paid`)
+      .set('x-user-id', actors.admin.id);
+    expect(res.status).toBe(200);
+    const body = res.body as { status: string; paidAt: string | null };
+    expect(body.status).toBe('PAID');
+    expect(body.paidAt).not.toBeNull();
+
+    const billAfter = await prisma.bill.findUniqueOrThrow({
+      where: { id: bill.id },
+    });
+    expect(billAfter.status).toBe(BillStatus.PAID);
+  });
+
+  it('cancel from FAILED: payment CANCELED, bill SCHEDULED -> APPROVED', async () => {
+    const { bill, payment } = await seedBillWithPayment({
+      billStatus: BillStatus.SCHEDULED,
+      paymentStatus: PaymentStatus.FAILED,
+      scheduledFor: new Date('2026-06-15T00:00:00.000Z'),
+      failedAt: new Date('2026-06-16T00:00:00.000Z'),
+      failureReason: 'Bank rejected.',
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/payments/${payment.id}/cancel`)
+      .set('x-user-id', actors.admin.id);
+    expect(res.status).toBe(200);
+    expect((res.body as { status: string }).status).toBe('CANCELED');
+
+    const billAfter = await prisma.bill.findUniqueOrThrow({
+      where: { id: bill.id },
+    });
+    expect(billAfter.status).toBe(BillStatus.APPROVED);
+  });
+
+  it('viewer cannot cancel a payment (403)', async () => {
+    const { payment } = await seedBillWithPayment({
+      billStatus: BillStatus.SCHEDULED,
+      paymentStatus: PaymentStatus.SCHEDULED,
+      scheduledFor: new Date('2026-06-15T00:00:00.000Z'),
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/payments/${payment.id}/cancel`)
+      .set('x-user-id', actors.viewer.id);
+    expect(res.status).toBe(403);
+    expect((res.body as { error: { code: string } }).error.code).toBe(
+      'INSUFFICIENT_PERMISSIONS',
+    );
+  });
+
   it('retry from FAILED: payment -> SCHEDULED, failedAt and failureReason cleared', async () => {
     const { payment } = await seedBillWithPayment({
       billStatus: BillStatus.SCHEDULED,

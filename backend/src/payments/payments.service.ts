@@ -323,11 +323,16 @@ export class PaymentsService {
     return { fromStatus: fresh.status, payment: { billId: fresh.billId } };
   }
 
-  // Best-effort Bill CAS triggered by a Payment side effect. If the Bill
-  // is not in the expected source status (rare race), we silently skip
-  // the propagation rather than failing the Payment transition — the
-  // Payment is the source of truth in this flow and an inconsistent Bill
-  // state would be visible to operators via the activity log anyway.
+  // CAS the Bill side of a Payment lifecycle action: read inside the
+  // tx, validate against allowed-from, conditional updateMany. If the
+  // Bill is not in an expected state (concurrent archive or another
+  // Payment-side action raced us), the whole Payment transition is
+  // aborted with 409 BILL_INVALID_TRANSITION rather than swallowing
+  // the divergence — silent skip would leave a Payment in (say)
+  // SCHEDULED under an ARCHIVED Bill with no audit row explaining it.
+  // The log records the *real* pre-update bill status, not
+  // `allowedFrom[0]`, so any future caller with a multi-element
+  // allowed-from set cannot silently log the wrong value.
   private async casBillFromPayment(
     tx: Prisma.TransactionClient,
     billId: string,
@@ -336,13 +341,47 @@ export class PaymentsService {
     actor: AuthUser,
     action: string,
   ): Promise<void> {
-    const result = await tx.bill.updateMany({
-      where: { id: billId, status: { in: allowedFrom } },
+    const fresh = await tx.bill.findUnique({
+      where: { id: billId },
+      select: { status: true },
+    });
+    if (!fresh) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: 'Bill not found.',
+      });
+    }
+    if (!allowedFrom.includes(fresh.status)) {
+      throw new ConflictException({
+        code: ErrorCode.BILL_INVALID_TRANSITION,
+        message: `Cannot transition bill from ${fresh.status} to ${to} as a side effect of the payment action.`,
+        details: {
+          from: fresh.status,
+          to,
+          allowedFrom,
+          triggeredBy: 'payment',
+        },
+      });
+    }
+    const cas = await tx.bill.updateMany({
+      where: { id: billId, status: fresh.status },
       data: { status: to },
     });
-    if (result.count === 0) {
-      // Bill was in an unexpected state; do not log a phantom transition.
-      return;
+    if (cas.count === 0) {
+      const after = await tx.bill.findUniqueOrThrow({
+        where: { id: billId },
+        select: { status: true },
+      });
+      throw new ConflictException({
+        code: ErrorCode.BILL_INVALID_TRANSITION,
+        message: `Cannot transition bill from ${after.status} to ${to} as a side effect of the payment action.`,
+        details: {
+          from: after.status,
+          to,
+          allowedFrom,
+          triggeredBy: 'payment',
+        },
+      });
     }
     await tx.activityLog.create({
       data: {
@@ -351,7 +390,7 @@ export class PaymentsService {
         actorId: actor.id,
         actorRole: actor.role,
         action,
-        fromStatus: allowedFrom[0],
+        fromStatus: fresh.status,
         toStatus: to,
         metadata: { triggeredBy: 'payment' },
       },

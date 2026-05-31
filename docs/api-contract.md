@@ -266,6 +266,8 @@ Paginated list.
 
 **Query**: `page`, `pageSize`, `status` (comma-separated `PaymentStatus`), `method` (`ACH | WIRE | CHECK | CARD | OFF_PLATFORM`), `billId`, `vendorId` (filters by the linked `Bill.vendorId`), `minAmount`, `maxAmount`, `scheduledForFrom`, `scheduledForTo`, `sort` (one of `createdAt | updatedAt | scheduledFor | paidAt | amount | status`; default `-createdAt`).
 
+`scheduledForFrom` / `scheduledForTo` apply a range on the `scheduledFor` column. Payments where `scheduledFor` is `null` (`UNSCHEDULED`, or any state that has not been scheduled yet) are excluded from the result.
+
 **200** → `{ data: PaymentResponse[], meta }`.
 
 ### `GET /payments/:id`
@@ -274,11 +276,11 @@ Paginated list.
 
 ### Lifecycle — `POST /payments/:id/...` — Admin only
 
-Every lifecycle action is `200`, CAS-atomic on `Payment.status`, runs in a single transaction with the bill propagation and an `ActivityLog` row. Invalid transitions return **`409 PAYMENT_INVALID_TRANSITION`** with `details: { from, to, allowedFrom }`.
+Every lifecycle action is `200`, CAS-atomic on `Payment.status`, runs in a single transaction with the bill propagation and an `ActivityLog` row. Invalid transitions on the Payment side return **`409 PAYMENT_INVALID_TRANSITION`** with `details: { from, to, allowedFrom }`. If the linked Bill is in an unexpected state for the propagation (e.g. it was archived in parallel), the whole action is aborted with **`409 BILL_INVALID_TRANSITION`** carrying `details: { from, to, allowedFrom, triggeredBy: "payment" }` — the consumer should refresh and retry.
 
 | Endpoint | Transition | Body | Side effects |
 |---|---|---|---|
-| `schedule` | `UNSCHEDULED → SCHEDULED` | `{ "scheduledFor": ISO-8601 }` | Set `scheduledFor`; Bill `APPROVED → SCHEDULED` |
+| `schedule` | `UNSCHEDULED → SCHEDULED` | `{ "scheduledFor": ISO-8601 }` | Set `scheduledFor`; Bill `APPROVED → SCHEDULED`. Past timestamps are accepted for back-dating operational scenarios; the contract does not enforce future-only. |
 | `unschedule` | `SCHEDULED → UNSCHEDULED` | none | Clear `scheduledFor`; Bill `SCHEDULED → APPROVED` |
 | `release` | `SCHEDULED → INITIATED` | none | Set `initiatedAt` |
 | `mark-as-paid` | `SCHEDULED | INITIATED → PAID` | none | Set `paidAt`; Bill `SCHEDULED → PAID` |
