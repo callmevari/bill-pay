@@ -547,6 +547,21 @@ export class BillsService {
         BillStatus.ARCHIVED,
         { archivedAt: new Date() },
       );
+
+      // Cancel any PENDING approvals: they were waiting on a decision
+      // that will never come because the bill is now archived. APPROVED
+      // and REJECTED approvals are historical decisions — never rewrite
+      // them; the audit trail keeps the truth.
+      const cancelled = await tx.approval.updateMany({
+        where: { billId: id, status: ApprovalStatus.PENDING },
+        data: { status: ApprovalStatus.CANCELED },
+      });
+
+      const metadata: Record<string, unknown> | undefined =
+        cancelled.count > 0
+          ? { cancelledApprovals: cancelled.count }
+          : undefined;
+
       await this.logBillTransition(
         tx,
         id,
@@ -554,6 +569,7 @@ export class BillsService {
         'bill.archived',
         fromStatus,
         BillStatus.ARCHIVED,
+        metadata,
       );
       return tx.bill.findUniqueOrThrow({
         where: { id },

@@ -170,6 +170,16 @@ describe('Bills lifecycle (e2e)', () => {
       status: BillStatus.REJECTED,
       invoiceNumber: 'INV-REJ-ARCH',
     });
+    // Seed the corresponding REJECTED Approval row so we can assert
+    // that archiving a REJECTED bill does NOT rewrite history.
+    await prisma.approval.create({
+      data: {
+        billId: bill.id,
+        approverId: actors.approver.id,
+        status: ApprovalStatus.REJECTED,
+        notes: 'Already rejected for cause.',
+      },
+    });
 
     const res = await request(app.getHttpServer())
       .post(`/api/v1/bills/${bill.id}/archive`)
@@ -186,6 +196,112 @@ describe('Bills lifecycle (e2e)', () => {
     });
     expect(archiveLog.fromStatus).toBe(BillStatus.REJECTED);
     expect(archiveLog.toStatus).toBe(BillStatus.ARCHIVED);
+    // No cancellation when nothing was PENDING.
+    expect(archiveLog.metadata).toBeNull();
+
+    // Approval stays REJECTED — historical truth preserved.
+    const approval = await prisma.approval.findFirstOrThrow({
+      where: { billId: bill.id },
+    });
+    expect(approval.status).toBe(ApprovalStatus.REJECTED);
+    expect(approval.notes).toBe('Already rejected for cause.');
+  });
+
+  // ---- cancel-on-archive matrix ----------------------------------
+
+  it('archive on a DRAFT bill: no approval rows exist, nothing to cancel', async () => {
+    const bill = await insertBill({
+      status: BillStatus.DRAFT,
+      invoiceNumber: 'INV-ARCH-DRAFT',
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/bills/${bill.id}/archive`)
+      .set('x-user-id', actors.admin.id);
+    expect(res.status).toBe(200);
+
+    const approvals = await prisma.approval.findMany({
+      where: { billId: bill.id },
+    });
+    expect(approvals).toHaveLength(0);
+
+    const archiveLog = await prisma.activityLog.findFirstOrThrow({
+      where: {
+        entityType: 'BILL',
+        entityId: bill.id,
+        action: 'bill.archived',
+      },
+    });
+    expect(archiveLog.metadata).toBeNull();
+  });
+
+  it('archive on a PENDING_APPROVAL bill: the PENDING Approval is CANCELED', async () => {
+    const bill = await insertBill({
+      status: BillStatus.DRAFT,
+      invoiceNumber: 'INV-ARCH-PENDING',
+    });
+    await request(app.getHttpServer())
+      .post(`/api/v1/bills/${bill.id}/submit-for-approval`)
+      .set('x-user-id', actors.admin.id);
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/bills/${bill.id}/archive`)
+      .set('x-user-id', actors.admin.id);
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      approvals: { status: string }[];
+    };
+    expect(body.approvals).toHaveLength(1);
+    expect(body.approvals[0].status).toBe('CANCELED');
+
+    // DB confirms.
+    const approval = await prisma.approval.findFirstOrThrow({
+      where: { billId: bill.id },
+    });
+    expect(approval.status).toBe(ApprovalStatus.CANCELED);
+
+    // Activity log carries `cancelledApprovals: 1`.
+    const archiveLog = await prisma.activityLog.findFirstOrThrow({
+      where: {
+        entityType: 'BILL',
+        entityId: bill.id,
+        action: 'bill.archived',
+      },
+    });
+    expect(archiveLog.metadata).toEqual({ cancelledApprovals: 1 });
+  });
+
+  it('archive on an APPROVED bill: the APPROVED Approval stays APPROVED (history preserved)', async () => {
+    const bill = await insertBill({
+      status: BillStatus.DRAFT,
+      invoiceNumber: 'INV-ARCH-APPROVED',
+    });
+    await request(app.getHttpServer())
+      .post(`/api/v1/bills/${bill.id}/submit-for-approval`)
+      .set('x-user-id', actors.admin.id);
+    await request(app.getHttpServer())
+      .post(`/api/v1/bills/${bill.id}/approve`)
+      .set('x-user-id', actors.approver.id);
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/bills/${bill.id}/archive`)
+      .set('x-user-id', actors.admin.id);
+    expect(res.status).toBe(200);
+
+    const approval = await prisma.approval.findFirstOrThrow({
+      where: { billId: bill.id },
+    });
+    expect(approval.status).toBe(ApprovalStatus.APPROVED);
+
+    const archiveLog = await prisma.activityLog.findFirstOrThrow({
+      where: {
+        entityType: 'BILL',
+        entityId: bill.id,
+        action: 'bill.archived',
+      },
+    });
+    // Nothing was PENDING -> no metadata.
+    expect(archiveLog.metadata).toBeNull();
   });
 
   it('reject stores notes on the Approval and writes a rejection log entry', async () => {

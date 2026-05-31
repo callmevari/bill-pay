@@ -234,7 +234,13 @@ Four action endpoints drive the bill through its state machine. Each is a `POST`
 
 #### `POST /bills/:id/archive` — Admin only
 
-`<any non-PAID, non-ARCHIVED> → ARCHIVED`. Sets `archivedAt` and the status; archival is permanent (no un-archive). **200** → updated `BillResponse`. **409 BILL_INVALID_TRANSITION** if the bill is `PAID` or already `ARCHIVED`. The `bill.archived` activity entry records the originating status in `fromStatus`.
+`<any non-PAID, non-ARCHIVED> → ARCHIVED`. Sets `archivedAt` and the status; archival is permanent (no un-archive).
+
+**Side effect — cancel-on-archive (Approval).** If the bill had a `PENDING` Approval (i.e. it was archived from `PENDING_APPROVAL`), that Approval row is transitioned to **`CANCELED`** inside the same transaction so it stops surfacing in approvers' queues. **Approvals already in `APPROVED` or `REJECTED` are never rewritten** — those are real human decisions and the audit trail keeps them. When at least one Approval was cancelled, the `bill.archived` activity entry's `metadata` carries `{ "cancelledApprovals": <count> }`.
+
+**Note**: archiving from `SCHEDULED` is allowed by the lifecycle table but is not reachable from the Phase 5 API surface — `Bill.status = SCHEDULED` only appears via seeded data, since the endpoint that schedules a payment lands in Phase 6. When that arrives, cancel-on-archive will be extended to in-flight Payments too.
+
+**200** → updated `BillResponse` (with the possibly-CANCELED Approval visible in `approvals[]`). **409 BILL_INVALID_TRANSITION** if the bill is `PAID` or already `ARCHIVED`. The `bill.archived` activity entry records the originating status in `fromStatus`.
 
 ### Error codes (Bills)
 

@@ -52,6 +52,7 @@ enum ApprovalStatus {
   PENDING
   APPROVED
   REJECTED
+  CANCELED
 }
 
 /// Discriminator on ActivityLog for the polymorphic entity reference.
