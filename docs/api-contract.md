@@ -17,6 +17,8 @@ Live HTTP surface of the Bill Pay API. Grows module by module; each entry matche
 | `GET /bills`, `GET /bills/:id`, `GET /bills/:id/line-items` | ✅ | ✅ | ✅ |
 | `POST /bills`, `PATCH /bills/:id` | ✅ | ❌ | ❌ |
 | `POST /bills/:id/line-items`, `PATCH /bills/:id/line-items/:lineItemId`, `DELETE /bills/:id/line-items/:lineItemId` | ✅ | ❌ | ❌ |
+| `POST /bills/:id/submit-for-approval`, `POST /bills/:id/archive` | ✅ | ❌ | ❌ |
+| `POST /bills/:id/approve`, `POST /bills/:id/reject` | ✅ | ✅ | ❌ |
 
 ---
 
@@ -203,12 +205,39 @@ Partial update. `quantity`, `unitPrice`, and `description` are non-null; `null` 
 
 ### `DELETE /bills/:id/line-items/:lineItemId` — Admin only
 
-**204** on success. **404 BILL_LINE_ITEM_NOT_FOUND** if missing/mismatched. **409 BILL_NOT_EDITABLE** for terminal bills.
+**204** on success. **404 BILL_LINE_ITEM_NOT_FOUND** if missing/mismatched. **409 BILL_NOT_EDITABLE` for terminal bills.
+
+### Lifecycle
+
+Four action endpoints drive the bill through its state machine. Each is a `POST` returning the updated `BillResponse` with `200`. Invalid transitions return **`409 BILL_INVALID_TRANSITION`** with `details: { from, to, allowedFrom }`. Every successful transition runs inside a single Prisma transaction together with its side effects and an `ActivityLog` row.
+
+#### `POST /bills/:id/submit-for-approval` — Admin only
+
+`DRAFT → PENDING_APPROVAL`. Creates one `Approval` row in `PENDING`, assigned to the seeded Approver user. **200** → updated `BillResponse`. **409 BILL_INVALID_TRANSITION** if the bill is not in `DRAFT`. **500 INTERNAL_ERROR** if no user with the `APPROVER` role exists (data inconsistency).
+
+#### `POST /bills/:id/approve` — Admin or Approver
+
+`PENDING_APPROVAL → APPROVED`. Updates the existing `Approval` row to `APPROVED` and sets `approverId` to the acting user (the actual approver, which may be an Admin). Creates the linked `Payment` row in `UNSCHEDULED` with `method = vendor.defaultPaymentMethod ?? 'ACH'` and `amount` / `currency` copied from the bill. **200** → updated `BillResponse`. **409 BILL_INVALID_TRANSITION** if the bill is not in `PENDING_APPROVAL`. A `payment.created` `ActivityLog` row is written alongside the `bill.approved` entry.
+
+#### `POST /bills/:id/reject` — Admin or Approver
+
+`PENDING_APPROVAL → REJECTED`. Updates the existing `Approval` row to `REJECTED` and stores the optional reviewer notes on `Approval.notes`.
+
+**Body** (optional):
+```json
+{ "notes": "Vendor billed for the wrong period." }
+```
+
+**200** → updated `BillResponse`. **409 BILL_INVALID_TRANSITION** if the bill is not in `PENDING_APPROVAL`. The `bill.rejected` activity entry carries `metadata.notes` when provided.
+
+#### `POST /bills/:id/archive` — Admin only
+
+`<any non-PAID, non-ARCHIVED> → ARCHIVED`. Sets `archivedAt` and the status; archival is permanent (no un-archive). **200** → updated `BillResponse`. **409 BILL_INVALID_TRANSITION** if the bill is `PAID` or already `ARCHIVED`. The `bill.archived` activity entry records the originating status in `fromStatus`.
 
 ### Error codes (Bills)
 
-`VALIDATION_ERROR` (400) · `NOT_FOUND` (404) · `VENDOR_NOT_FOUND` (404) · `BILL_LINE_ITEM_NOT_FOUND` (404) · `BILL_NOT_EDITABLE` (409) · `UNIQUE_CONSTRAINT_VIOLATION` (409) — plus the auth/role codes shared across the API.
+`VALIDATION_ERROR` (400) · `NOT_FOUND` (404) · `VENDOR_NOT_FOUND` (404) · `BILL_LINE_ITEM_NOT_FOUND` (404) · `BILL_NOT_EDITABLE` (409) · `BILL_INVALID_TRANSITION` (409) · `UNIQUE_CONSTRAINT_VIOLATION` (409) — plus the auth/role codes shared across the API.
 
 ### Activity log
 
-Every successful write emits one `ActivityLog` row in the same transaction with `entityType = BILL`, `entityId = bill.id`, `actorId`, `actorRole`, and one of: `bill.created`, `bill.updated`, `bill.line_item_added`, `bill.line_item_updated`, `bill.line_item_removed`. Read endpoints for the activity log are documented in a later module.
+Every successful write emits one `ActivityLog` row in the same transaction with `entityType = BILL`, `entityId = bill.id`, `actorId`, `actorRole`. Possible `action` values: `bill.created`, `bill.updated`, `bill.line_item_added`, `bill.line_item_updated`, `bill.line_item_removed`, `bill.submitted_for_approval`, `bill.approved`, `bill.rejected`, `bill.archived`. Approving a bill additionally writes a sibling `payment.created` entry (`entityType = PAYMENT`, `entityId = payment.id`). Read endpoints for the activity log are documented in a later module.

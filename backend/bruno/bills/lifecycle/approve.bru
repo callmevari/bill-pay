@@ -1,0 +1,18 @@
+meta {
+  name: Approve
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/bills/{{billId}}/approve
+  body: none
+  auth: none
+}
+
+docs {
+  Admin or Approver. Transitions PENDING_APPROVAL -> APPROVED, updates
+  the Approval row, and creates the linked Payment in UNSCHEDULED with
+  method = vendor.defaultPaymentMethod ?? 'ACH'. Switch to the
+  local-approver env to confirm approvers can run it; viewer -> 403.
+}
