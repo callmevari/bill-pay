@@ -126,7 +126,7 @@ Every feature / module ships with **both** a unit suite and an e2e suite. They h
 | Layer | Lives in | Runs with | What it covers | What it does NOT cover |
 |---|---|---|---|---|
 | **Unit** | `backend/src/**/*.spec.ts` | `pnpm --filter backend test` | Logic where the answer lives in code paths: parsers, allow-lists, guards as decisions, math, mappers (when non-trivial), error-translation branches. `PrismaService` is mocked. | Anything whose correctness depends on actually persisting / reading / joining rows. |
-| **E2E** | `backend/test/**/*.e2e-spec.ts` | `pnpm --filter backend test:e2e` | Anything that has to be true once the request reaches Postgres: persistence, type round-tripping (`Decimal(12, 2)`, `DateTime`, JSON metadata), nested writes, transaction atomicity (activity-log row visible iff the parent write committed), `?` translations of Prisma error codes, real list queries (filters / sort / pagination producing the documented `{data, meta}` against real SQL), role guard wired end-to-end through HTTP. | Branch-by-branch validation that the unit layer already covers. |
+| **E2E** | `backend/test/**/*.e2e-spec.ts` | `pnpm --filter backend test:e2e` | Anything that has to be true once the request reaches Postgres: persistence, type round-tripping (`Decimal(12, 2)`, `DateTime`, JSON metadata), nested writes, transaction atomicity (activity-log row visible iff the parent write committed), contract translations of Prisma error codes (e.g. `P2003` → `404 VENDOR_NOT_FOUND`), real list queries (filters / sort / pagination producing the documented `{data, meta}` against real SQL), role guard wired end-to-end through HTTP. | Branch-by-branch validation that the unit layer already covers. |
 
 ### Designing the test suite for a new module / feature
 

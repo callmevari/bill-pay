@@ -74,17 +74,29 @@ describe('Bills (e2e)', () => {
 
     const stored = await prisma.bill.findUnique({
       where: { id: responseBody.id },
-      include: { lineItems: { orderBy: { createdAt: 'asc' } } },
+      include: { lineItems: true },
     });
     expect(stored).not.toBeNull();
     expect(stored?.amount.toFixed(2)).toBe('12480.55');
     expect(stored?.currency).toBe('USD');
     expect(stored?.vendorId).toBe(actors.vendor.id);
-    expect(stored?.lineItems.map((li) => li.total.toFixed(2))).toEqual([
-      '8200.00',
-      '1980.55',
-      '2300.00',
-    ]);
+    // Order-agnostic: line items written in the same nested
+    // `prisma.bill.create` may share a `createdAt` to microsecond
+    // precision, leaving Postgres free to return them in any order.
+    // Assert membership + length instead of position.
+    expect(stored?.lineItems).toHaveLength(3);
+    expect(
+      stored?.lineItems.map((li) => ({
+        description: li.description,
+        total: li.total.toFixed(2),
+      })),
+    ).toEqual(
+      expect.arrayContaining([
+        { description: 'EC2 compute', total: '8200.00' },
+        { description: 'S3 storage', total: '1980.55' },
+        { description: 'CloudFront egress', total: '2300.00' },
+      ]),
+    );
 
     const activity = await prisma.activityLog.findMany({
       where: { entityType: 'BILL', entityId: responseBody.id },
