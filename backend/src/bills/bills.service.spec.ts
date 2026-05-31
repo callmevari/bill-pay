@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -28,6 +29,7 @@ interface PrismaMock {
     delete: jest.Mock;
   };
   activityLog: { create: jest.Mock };
+  user: { findFirst: jest.Mock };
   $transaction: jest.Mock;
 }
 
@@ -52,6 +54,7 @@ describe('BillsService', () => {
         delete: jest.fn(),
       },
       activityLog: { create: jest.fn() },
+      user: { findFirst: jest.fn() },
       $transaction: jest.fn(),
     };
 
@@ -185,6 +188,121 @@ describe('BillsService', () => {
         actor,
       );
       expect(result.total).toBe('301.50');
+    });
+  });
+
+  // ---- lifecycle transition guards --------------------------------
+  // Service-layer state-machine assertions. Each transition method
+  // pre-checks the current status and throws 409 BILL_INVALID_TRANSITION
+  // before opening the Prisma transaction, so these tests need no
+  // transaction mocking. End-to-end coverage of the legal paths
+  // (Approval/Payment side effects, activity log) lives in the e2e suite.
+
+  const lifecycleBill = (status: BillStatus) => ({
+    id: 'b1',
+    status,
+    vendorId: 'v1',
+    lineItems: [],
+  });
+
+  describe('submitForApproval', () => {
+    it.each([
+      BillStatus.PENDING_APPROVAL,
+      BillStatus.APPROVED,
+      BillStatus.SCHEDULED,
+      BillStatus.PAID,
+      BillStatus.REJECTED,
+      BillStatus.ARCHIVED,
+    ])('throws 409 BILL_INVALID_TRANSITION from %s', async (status) => {
+      prisma.bill.findUnique.mockResolvedValue(lifecycleBill(status));
+      await expect(
+        service.submitForApproval('b1', actor),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('throws 500 when no APPROVER user exists to assign', async () => {
+      prisma.bill.findUnique.mockResolvedValue(lifecycleBill(BillStatus.DRAFT));
+      prisma.user.findFirst.mockResolvedValue(null);
+      // The approver lookup runs INSIDE the $transaction now (BLOCKER-1
+      // fix from the reviewer pass), so we have to invoke the callback
+      // with the same Prisma mock to reach it.
+      prisma.$transaction.mockImplementation(
+        async (cb: (tx: PrismaMock) => Promise<unknown>) => cb(prisma),
+      );
+      await expect(
+        service.submitForApproval('b1', actor),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+  });
+
+  describe('approve', () => {
+    it.each([
+      BillStatus.DRAFT,
+      BillStatus.APPROVED,
+      BillStatus.SCHEDULED,
+      BillStatus.PAID,
+      BillStatus.REJECTED,
+      BillStatus.ARCHIVED,
+    ])('throws 409 BILL_INVALID_TRANSITION from %s', async (status) => {
+      prisma.bill.findUnique.mockResolvedValue(lifecycleBill(status));
+      await expect(service.approve('b1', actor)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+  });
+
+  describe('reject', () => {
+    it.each([
+      BillStatus.DRAFT,
+      BillStatus.APPROVED,
+      BillStatus.SCHEDULED,
+      BillStatus.PAID,
+      BillStatus.REJECTED,
+      BillStatus.ARCHIVED,
+    ])('throws 409 BILL_INVALID_TRANSITION from %s', async (status) => {
+      prisma.bill.findUnique.mockResolvedValue(lifecycleBill(status));
+      await expect(service.reject('b1', {}, actor)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+  });
+
+  describe('archive', () => {
+    it.each([BillStatus.PAID, BillStatus.ARCHIVED])(
+      'throws 409 BILL_INVALID_TRANSITION from %s',
+      async (status) => {
+        prisma.bill.findUnique.mockResolvedValue(lifecycleBill(status));
+        await expect(service.archive('b1', actor)).rejects.toBeInstanceOf(
+          ConflictException,
+        );
+      },
+    );
+
+    it('exposes the allowedFrom set in error details', async () => {
+      prisma.bill.findUnique.mockResolvedValue(lifecycleBill(BillStatus.PAID));
+      let caught: ConflictException | undefined;
+      try {
+        await service.archive('b1', actor);
+      } catch (e) {
+        caught = e as ConflictException;
+      }
+      expect(caught).toBeInstanceOf(ConflictException);
+      const payload = caught?.getResponse() as {
+        code: string;
+        details: { from: string; to: string; allowedFrom: string[] };
+      };
+      expect(payload.code).toBe('BILL_INVALID_TRANSITION');
+      expect(payload.details.from).toBe('PAID');
+      expect(payload.details.to).toBe('ARCHIVED');
+      expect(payload.details.allowedFrom).toEqual(
+        expect.arrayContaining([
+          BillStatus.DRAFT,
+          BillStatus.PENDING_APPROVAL,
+          BillStatus.APPROVED,
+          BillStatus.SCHEDULED,
+          BillStatus.REJECTED,
+        ]),
+      );
     });
   });
 });

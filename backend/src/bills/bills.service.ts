@@ -2,9 +2,18 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { ActivityEntityType, BillStatus, Prisma } from '@prisma/client';
+import {
+  ActivityEntityType,
+  ApprovalStatus,
+  BillStatus,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+  Role,
+} from '@prisma/client';
 
 import type { AuthUser } from '../auth/auth-user';
 import {
@@ -22,10 +31,11 @@ import { BillLineItemResponseDto } from './dto/bill-line-item-response.dto';
 import { BillResponseDto } from './dto/bill-response.dto';
 import { CreateBillDto } from './dto/create-bill.dto';
 import { CreateBillLineItemDto } from './dto/create-bill-line-item.dto';
+import { RejectBillDto } from './dto/reject-bill.dto';
 import { UpdateBillDto } from './dto/update-bill.dto';
 import { UpdateBillLineItemDto } from './dto/update-bill-line-item.dto';
 import {
-  BillWithLineItems,
+  BillWithRelations,
   toBillLineItemResponse,
   toBillResponse,
 } from './bills.mapper';
@@ -38,7 +48,7 @@ const TERMINAL_STATUSES: BillStatus[] = [
 
 const BILL_STATUSES = new Set<string>(Object.values(BillStatus));
 
-const billInclude = { lineItems: true } as const;
+const billInclude = { lineItems: true, payment: true } as const;
 
 @Injectable()
 export class BillsService {
@@ -304,7 +314,282 @@ export class BillsService {
     });
   }
 
+  // ---- lifecycle ----------------------------------------------------
+
+  async submitForApproval(
+    id: string,
+    actor: AuthUser,
+  ): Promise<BillResponseDto> {
+    const bill = await this.loadOrThrow(id);
+    this.ensureTransition(
+      bill.status,
+      [BillStatus.DRAFT],
+      BillStatus.PENDING_APPROVAL,
+    );
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Pick the assigned approver inside the transaction so a deletion
+      // of the APPROVER user between the lookup and the Approval insert
+      // can't produce a partially-applied state. The actual approver who
+      // decides is recorded later by `approve` / `reject` (they
+      // overwrite this field with `actor.id`).
+      const assignedApprover = await tx.user.findFirst({
+        where: { role: Role.APPROVER },
+        select: { id: true },
+      });
+      if (!assignedApprover) {
+        throw new InternalServerErrorException({
+          code: ErrorCode.INTERNAL_ERROR,
+          message: 'No user with role APPROVER is available to assign.',
+        });
+      }
+
+      const result = await tx.bill.update({
+        where: { id },
+        data: { status: BillStatus.PENDING_APPROVAL },
+        include: billInclude,
+      });
+      await tx.approval.create({
+        data: {
+          billId: id,
+          approverId: assignedApprover.id,
+          status: ApprovalStatus.PENDING,
+        },
+      });
+      await this.logBillTransition(
+        tx,
+        id,
+        actor,
+        'bill.submitted_for_approval',
+        BillStatus.DRAFT,
+        BillStatus.PENDING_APPROVAL,
+      );
+      return result;
+    });
+
+    return toBillResponse(updated);
+  }
+
+  async approve(id: string, actor: AuthUser): Promise<BillResponseDto> {
+    const bill = await this.loadOrThrow(id);
+    this.ensureTransition(
+      bill.status,
+      [BillStatus.PENDING_APPROVAL],
+      BillStatus.APPROVED,
+    );
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Look up the vendor inside the transaction so a race where the
+      // vendor is deleted between read and the Payment.create can't leak
+      // a raw 409 FOREIGN_KEY_VIOLATION through the response.
+      const vendor = await tx.vendor.findUnique({
+        where: { id: bill.vendorId },
+        select: { defaultPaymentMethod: true },
+      });
+      if (!vendor) {
+        throw new NotFoundException({
+          code: ErrorCode.VENDOR_NOT_FOUND,
+          message: 'Vendor not found.',
+        });
+      }
+      const paymentMethod = vendor.defaultPaymentMethod ?? PaymentMethod.ACH;
+
+      const result = await tx.bill.update({
+        where: { id },
+        data: { status: BillStatus.APPROVED },
+        include: billInclude,
+      });
+
+      // MVP invariant: exactly one Approval row per bill (created at
+      // `submitForApproval`). See `docs/backend.md → Approval`.
+      const approval = await tx.approval.findFirstOrThrow({
+        where: { billId: id, status: ApprovalStatus.PENDING },
+      });
+      await tx.approval.update({
+        where: { id: approval.id },
+        data: {
+          status: ApprovalStatus.APPROVED,
+          approverId: actor.id,
+        },
+      });
+
+      const payment = await tx.payment.create({
+        data: {
+          billId: id,
+          status: PaymentStatus.UNSCHEDULED,
+          method: paymentMethod,
+          amount: result.amount,
+          currency: result.currency,
+        },
+      });
+
+      await this.logBillTransition(
+        tx,
+        id,
+        actor,
+        'bill.approved',
+        BillStatus.PENDING_APPROVAL,
+        BillStatus.APPROVED,
+      );
+      await tx.activityLog.create({
+        data: {
+          entityType: ActivityEntityType.PAYMENT,
+          entityId: payment.id,
+          actorId: actor.id,
+          actorRole: actor.role,
+          action: 'payment.created',
+          toStatus: PaymentStatus.UNSCHEDULED,
+          metadata: { method: paymentMethod, billId: id },
+        },
+      });
+
+      // Re-read the bill so the response surfaces the freshly created
+      // Payment via the `include` projection.
+      return tx.bill.findUniqueOrThrow({
+        where: { id },
+        include: billInclude,
+      });
+    });
+
+    return toBillResponse(updated);
+  }
+
+  async reject(
+    id: string,
+    dto: RejectBillDto,
+    actor: AuthUser,
+  ): Promise<BillResponseDto> {
+    const bill = await this.loadOrThrow(id);
+    this.ensureTransition(
+      bill.status,
+      [BillStatus.PENDING_APPROVAL],
+      BillStatus.REJECTED,
+    );
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.bill.update({
+        where: { id },
+        data: { status: BillStatus.REJECTED },
+        include: billInclude,
+      });
+
+      // MVP invariant: exactly one Approval row per bill (created at
+      // `submitForApproval`). See `docs/backend.md → Approval`.
+      const approval = await tx.approval.findFirstOrThrow({
+        where: { billId: id, status: ApprovalStatus.PENDING },
+      });
+      await tx.approval.update({
+        where: { id: approval.id },
+        data: {
+          status: ApprovalStatus.REJECTED,
+          approverId: actor.id,
+          notes: dto.notes ?? null,
+        },
+      });
+
+      await this.logBillTransition(
+        tx,
+        id,
+        actor,
+        'bill.rejected',
+        BillStatus.PENDING_APPROVAL,
+        BillStatus.REJECTED,
+        dto.notes ? { notes: dto.notes } : undefined,
+      );
+
+      return result;
+    });
+
+    return toBillResponse(updated);
+  }
+
+  async archive(id: string, actor: AuthUser): Promise<BillResponseDto> {
+    const bill = await this.loadOrThrow(id);
+    this.ensureTransition(
+      bill.status,
+      [
+        BillStatus.DRAFT,
+        BillStatus.PENDING_APPROVAL,
+        BillStatus.APPROVED,
+        BillStatus.SCHEDULED,
+        BillStatus.REJECTED,
+      ],
+      BillStatus.ARCHIVED,
+    );
+
+    const fromStatus = bill.status;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.bill.update({
+        where: { id },
+        data: { status: BillStatus.ARCHIVED, archivedAt: new Date() },
+        include: billInclude,
+      });
+      await this.logBillTransition(
+        tx,
+        id,
+        actor,
+        'bill.archived',
+        fromStatus,
+        BillStatus.ARCHIVED,
+      );
+      return result;
+    });
+
+    return toBillResponse(updated);
+  }
+
   // ---- helpers ------------------------------------------------------
+
+  private async loadOrThrow(id: string): Promise<BillWithRelations> {
+    const bill = await this.prisma.bill.findUnique({
+      where: { id },
+      include: billInclude,
+    });
+    if (!bill) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: 'Bill not found.',
+      });
+    }
+    return bill;
+  }
+
+  private ensureTransition(
+    current: BillStatus,
+    allowedFrom: BillStatus[],
+    to: BillStatus,
+  ): void {
+    if (!allowedFrom.includes(current)) {
+      throw new ConflictException({
+        code: ErrorCode.BILL_INVALID_TRANSITION,
+        message: `Cannot transition bill from ${current} to ${to}.`,
+        details: { from: current, to, allowedFrom },
+      });
+    }
+  }
+
+  private async logBillTransition(
+    tx: Prisma.TransactionClient,
+    billId: string,
+    actor: AuthUser,
+    action: string,
+    fromStatus: BillStatus,
+    toStatus: BillStatus,
+    metadata?: Record<string, unknown>,
+  ): Promise<void> {
+    await tx.activityLog.create({
+      data: {
+        entityType: ActivityEntityType.BILL,
+        entityId: billId,
+        actorId: actor.id,
+        actorRole: actor.role,
+        action,
+        fromStatus,
+        toStatus,
+        metadata: (metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+      },
+    });
+  }
 
   private async ensureVendorExists(vendorId: string): Promise<void> {
     const vendor = await this.prisma.vendor.findUnique({
@@ -341,7 +626,7 @@ export class BillsService {
     }
   }
 
-  private async ensureEditable(id: string): Promise<BillWithLineItems> {
+  private async ensureEditable(id: string): Promise<BillWithRelations> {
     const bill = await this.prisma.bill.findUnique({
       where: { id },
       include: billInclude,

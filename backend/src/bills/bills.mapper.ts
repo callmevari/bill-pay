@@ -1,9 +1,18 @@
-import { Bill, BillLineItem } from '@prisma/client';
+import { Bill, BillLineItem, Payment } from '@prisma/client';
 
 import { BillLineItemResponseDto } from './dto/bill-line-item-response.dto';
+import { BillPaymentResponseDto } from './dto/bill-payment-response.dto';
 import { BillResponseDto } from './dto/bill-response.dto';
 
-export type BillWithLineItems = Bill & { lineItems: BillLineItem[] };
+export type BillWithRelations = Bill & {
+  lineItems: BillLineItem[];
+  payment: Payment | null;
+};
+
+// Retained alias so existing call sites that only use the lineItems
+// projection don't need to widen their type. New code should prefer
+// `BillWithRelations`, which also carries the optional `payment`.
+export type BillWithLineItems = BillWithRelations;
 
 export function toBillLineItemResponse(
   lineItem: BillLineItem,
@@ -20,7 +29,29 @@ export function toBillLineItemResponse(
   };
 }
 
-export function toBillResponse(bill: BillWithLineItems): BillResponseDto {
+export function toBillPaymentResponse(
+  payment: Payment,
+): BillPaymentResponseDto {
+  return {
+    id: payment.id,
+    status: payment.status,
+    method: payment.method,
+    amount: payment.amount.toFixed(2),
+    currency: payment.currency,
+    scheduledFor: payment.scheduledFor
+      ? payment.scheduledFor.toISOString()
+      : null,
+    initiatedAt: payment.initiatedAt ? payment.initiatedAt.toISOString() : null,
+    paidAt: payment.paidAt ? payment.paidAt.toISOString() : null,
+    failedAt: payment.failedAt ? payment.failedAt.toISOString() : null,
+    canceledAt: payment.canceledAt ? payment.canceledAt.toISOString() : null,
+    failureReason: payment.failureReason,
+    createdAt: payment.createdAt.toISOString(),
+    updatedAt: payment.updatedAt.toISOString(),
+  };
+}
+
+export function toBillResponse(bill: BillWithRelations): BillResponseDto {
   return {
     id: bill.id,
     invoiceNumber: bill.invoiceNumber,
@@ -36,5 +67,6 @@ export function toBillResponse(bill: BillWithLineItems): BillResponseDto {
     createdAt: bill.createdAt.toISOString(),
     updatedAt: bill.updatedAt.toISOString(),
     lineItems: bill.lineItems.map(toBillLineItemResponse),
+    payment: bill.payment ? toBillPaymentResponse(bill.payment) : null,
   };
 }
