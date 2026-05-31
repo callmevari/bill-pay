@@ -17,6 +17,7 @@ describe('Bills (e2e)', () => {
   });
 
   afterAll(async () => {
+    await resetDatabase(prisma);
     await app.close();
     await prisma.$disconnect();
   });
