@@ -557,10 +557,41 @@ export class BillsService {
         data: { status: ApprovalStatus.CANCELED },
       });
 
-      const metadata: Record<string, unknown> | undefined =
-        cancelled.count > 0
-          ? { cancelledApprovals: cancelled.count }
-          : undefined;
+      // Cancel an in-flight Payment too. Any non-terminal Payment status
+      // is abandoned — the bill is gone from the active queue.
+      const existingPayment = await tx.payment.findUnique({
+        where: { billId: id },
+      });
+      let cancelledPaymentId: string | null = null;
+      const inFlight: PaymentStatus[] = [
+        PaymentStatus.UNSCHEDULED,
+        PaymentStatus.SCHEDULED,
+        PaymentStatus.INITIATED,
+        PaymentStatus.FAILED,
+      ];
+      if (existingPayment && inFlight.includes(existingPayment.status)) {
+        await tx.payment.update({
+          where: { id: existingPayment.id },
+          data: { status: PaymentStatus.CANCELED, canceledAt: new Date() },
+        });
+        await tx.activityLog.create({
+          data: {
+            entityType: ActivityEntityType.PAYMENT,
+            entityId: existingPayment.id,
+            actorId: actor.id,
+            actorRole: actor.role,
+            action: 'payment.canceled',
+            fromStatus: existingPayment.status,
+            toStatus: PaymentStatus.CANCELED,
+            metadata: { triggeredBy: 'bill.archived' },
+          },
+        });
+        cancelledPaymentId = existingPayment.id;
+      }
+
+      const metadata: Record<string, unknown> = {};
+      if (cancelled.count > 0) metadata.cancelledApprovals = cancelled.count;
+      if (cancelledPaymentId) metadata.cancelledPayment = cancelledPaymentId;
 
       await this.logBillTransition(
         tx,
@@ -569,7 +600,7 @@ export class BillsService {
         'bill.archived',
         fromStatus,
         BillStatus.ARCHIVED,
-        metadata,
+        Object.keys(metadata).length > 0 ? metadata : undefined,
       );
       return tx.bill.findUniqueOrThrow({
         where: { id },

@@ -1,0 +1,15 @@
+meta {
+  name: Mark as paid
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/payments/{{paymentId}}/mark-as-paid
+  body: none
+  auth: none
+}
+
+docs {
+  Admin only. SCHEDULED or INITIATED -> PAID. Sets paidAt. Bill -> PAID.
+}

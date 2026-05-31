@@ -1,0 +1,15 @@
+meta {
+  name: Get payment
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/payments/{{paymentId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Uses the `paymentId` var set by List payments. Readable by all roles.
+}

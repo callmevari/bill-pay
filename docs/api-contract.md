@@ -19,6 +19,8 @@ Live HTTP surface of the Bill Pay API. Grows module by module; each entry matche
 | `POST /bills/:id/line-items`, `PATCH /bills/:id/line-items/:lineItemId`, `DELETE /bills/:id/line-items/:lineItemId` | ✅ | ❌ | ❌ |
 | `POST /bills/:id/submit-for-approval`, `POST /bills/:id/archive` | ✅ | ❌ | ❌ |
 | `POST /bills/:id/approve`, `POST /bills/:id/reject` | ✅ | ✅ | ❌ |
+| `GET /payments`, `GET /payments/:id` | ✅ | ✅ | ✅ |
+| `POST /payments/:id/{schedule,unschedule,release,mark-as-paid,cancel,retry}` | ✅ | ❌ | ❌ |
 
 ---
 
@@ -248,4 +250,49 @@ Four action endpoints drive the bill through its state machine. Each is a `POST`
 
 ### Activity log
 
-Every successful write emits one `ActivityLog` row in the same transaction with `entityType = BILL`, `entityId = bill.id`, `actorId`, `actorRole`. Possible `action` values: `bill.created`, `bill.updated`, `bill.line_item_added`, `bill.line_item_updated`, `bill.line_item_removed`, `bill.submitted_for_approval`, `bill.approved`, `bill.rejected`, `bill.archived`. Approving a bill additionally writes a sibling `payment.created` entry (`entityType = PAYMENT`, `entityId = payment.id`). Read endpoints for the activity log are documented in a later module.
+Every successful write emits one `ActivityLog` row in the same transaction with `entityType = BILL`, `entityId = bill.id`, `actorId`, `actorRole`. Possible `action` values: `bill.created`, `bill.updated`, `bill.line_item_added`, `bill.line_item_updated`, `bill.line_item_removed`, `bill.submitted_for_approval`, `bill.approved`, `bill.rejected`, `bill.archived`, `bill.scheduled`, `bill.unscheduled`, `bill.paid`, `bill.payment_canceled`. Approving a bill additionally writes a sibling `payment.created` entry (`entityType = PAYMENT`, `entityId = payment.id`). Read endpoints for the activity log are documented in a later module.
+
+---
+
+## Payments
+
+Payments are auto-created in `UNSCHEDULED` when a bill is approved. They have their own lifecycle and a dedicated `Payments` surface for triage and action. Marking a payment `PAID` propagates `Bill.status → PAID`; `schedule` / `unschedule` / `cancel` propagate the bill back to `SCHEDULED` / `APPROVED` as appropriate.
+
+`PaymentStatus` ∈ `UNSCHEDULED | SCHEDULED | INITIATED | PAID | FAILED | CANCELED`. `FAILED` is reachable only via seed data — there is no API endpoint that fails a payment manually; the Payment service simulates the bank rejection path so we can exercise `retry`.
+
+### `GET /payments`
+
+Paginated list.
+
+**Query**: `page`, `pageSize`, `status` (comma-separated `PaymentStatus`), `method` (`ACH | WIRE | CHECK | CARD | OFF_PLATFORM`), `billId`, `vendorId` (filters by the linked `Bill.vendorId`), `minAmount`, `maxAmount`, `scheduledForFrom`, `scheduledForTo`, `sort` (one of `createdAt | updatedAt | scheduledFor | paidAt | amount | status`; default `-createdAt`).
+
+**200** → `{ data: PaymentResponse[], meta }`.
+
+### `GET /payments/:id`
+
+**200** → bare `PaymentResponse`. **404 PAYMENT_NOT_FOUND** if missing.
+
+### Lifecycle — `POST /payments/:id/...` — Admin only
+
+Every lifecycle action is `200`, CAS-atomic on `Payment.status`, runs in a single transaction with the bill propagation and an `ActivityLog` row. Invalid transitions return **`409 PAYMENT_INVALID_TRANSITION`** with `details: { from, to, allowedFrom }`.
+
+| Endpoint | Transition | Body | Side effects |
+|---|---|---|---|
+| `schedule` | `UNSCHEDULED → SCHEDULED` | `{ "scheduledFor": ISO-8601 }` | Set `scheduledFor`; Bill `APPROVED → SCHEDULED` |
+| `unschedule` | `SCHEDULED → UNSCHEDULED` | none | Clear `scheduledFor`; Bill `SCHEDULED → APPROVED` |
+| `release` | `SCHEDULED → INITIATED` | none | Set `initiatedAt` |
+| `mark-as-paid` | `SCHEDULED | INITIATED → PAID` | none | Set `paidAt`; Bill `SCHEDULED → PAID` |
+| `cancel` | `SCHEDULED | INITIATED | FAILED → CANCELED` | none | Set `canceledAt`; Bill `SCHEDULED → APPROVED` |
+| `retry` | `FAILED → SCHEDULED` | none | Clear `failedAt`, `failureReason` |
+
+### Cancel-on-archive
+
+`POST /bills/:id/archive` (Phase 5) cancels an in-flight Payment (`UNSCHEDULED | SCHEDULED | INITIATED | FAILED`) in the same transaction as the bill archive, sets `Payment.canceledAt`, and records `metadata: { cancelledPayment: paymentId }` on the `bill.archived` activity entry. A sibling `payment.canceled` entry is written with `metadata: { triggeredBy: "bill.archived" }`.
+
+### Error codes (Payments)
+
+`VALIDATION_ERROR` (400) · `PAYMENT_NOT_FOUND` (404) · `PAYMENT_INVALID_TRANSITION` (409) — plus the auth/role codes shared across the API.
+
+### Activity log (Payment actions)
+
+`entityType = PAYMENT`, `entityId = payment.id`. `action` ∈ `payment.created`, `payment.scheduled`, `payment.unscheduled`, `payment.released`, `payment.marked_as_paid`, `payment.canceled`, `payment.retried`. Bill-side mirror entries are listed in the Bills activity-log section above.
