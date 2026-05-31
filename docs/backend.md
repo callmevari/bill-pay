@@ -148,16 +148,24 @@ Setup:
 - `backend/test/setup-env.ts` (Jest `setupFiles`) re-loads `.env.test` in each worker before the test file is imported, so the `PrismaClient` Nest creates picks up the test URL.
 - `backend/test/helpers/db.ts` exposes `resetDatabase()` (truncate all rows in dependency order) and `seedMinimalData()` (one admin + approver + viewer + vendor). Specs call them in `beforeEach` so every test starts on a clean slate.
 
-E2E coverage is deliberately narrow — we focus on contract-shape behaviour that unit tests with mocked Prisma cannot reach:
+E2E coverage targets the contract-shape behaviours that mocked-Prisma unit tests cannot reach. The high-level rule and per-endpoint checklist for designing the suite for any new module live in `CLAUDE.md → Testing`. Currently covered:
 
-- `POST /bills` with `vendorId: "asd"` → `404 VENDOR_NOT_FOUND` (FK translated, not the raw `409 FOREIGN_KEY_VIOLATION`).
-- `POST /bills` with `amount` outside `Decimal(12, 2)` → `400 VALIDATION_ERROR` (rejected at the DTO boundary).
-- `PATCH /bills/<paid>` → `409 BILL_NOT_EDITABLE` (terminal guard hit end-to-end).
-- `DELETE /vendors/<referenced>` → `409 VENDOR_HAS_BILLS` (delete guard with real FK).
-- `POST /vendors` as Viewer → `403 INSUFFICIENT_PERMISSIONS` (role guard wired through).
-- `GET /health` returns `{ ok: true }` (smoke).
+- **Happy-path persistence (write plumbing).** `POST /bills` with full body asserts the response, then re-reads via Prisma to confirm the row + nested line-item `total`s + the `bill.created` activity-log entry are all persisted. `POST /vendors` does the same against `Vendor`. These two tests cover the bulk of the Decimal/Date/JSON/nested-write/transaction plumbing in one shot — if Phase 5/6 accidentally breaks field mapping or transaction wiring, they'll catch it.
+- **Read plumbing.** `GET /bills?status=...&sort=amount` seeds a deterministic dataset and asserts the `{data, meta}` envelope shape, the filter intersection, and the sort order against real SQL.
+- **FK translations.** `POST /bills` with `vendorId: "asd"` → `404 VENDOR_NOT_FOUND` (translated, not the raw `409 FOREIGN_KEY_VIOLATION`). One per FK field accepted in a request body.
+- **DTO-boundary overflow.** `POST /bills` with `amount` outside `Decimal(12, 2)` → `400 VALIDATION_ERROR` from the regex helper, not a 500 from Postgres.
+- **Terminal / guard transitions.** `PATCH /bills/<paid>` → `409 BILL_NOT_EDITABLE` with `details.status` end-to-end.
+- **Delete guards.** `DELETE /vendors/<referenced>` → `409 VENDOR_HAS_BILLS` with `details.billCount`.
+- **Role-guard plumbing.** `POST /vendors` as Viewer → `403 INSUFFICIENT_PERMISSIONS` — proves the guard is wired through the global pipeline.
+- **Smoke.** `GET /health` returns `{ ok: true }`.
 
-New endpoints add one or two e2e tests for the cases their unit tests cannot cover, not a test per branch.
+### Patterns to add as new module shapes appear
+
+When the next phase introduces a shape we haven't tested yet, codify it here so the recipe stays current.
+
+- **State machine transitions** (Phase 5, lifecycle endpoints): one e2e per legal transition (`submit-for-approval` then `approve` then `mark-as-paid`, asserting the resulting `status`, the auto-created `Payment` row, and the chain of `ActivityLog` entries) plus one e2e per **illegal** transition (e.g. `approve` on `DRAFT` → `409 BILL_INVALID_TRANSITION`).
+- **Bulk endpoints** (Phase 7): one e2e mixing valid and invalid items in the same batch and asserting the per-item result envelope (`{ id, ok, error? }`), so partial-failure visibility is preserved end-to-end.
+- **Async / job-driven flows**: not in scope for this MVP. If one ever lands, add a section.
 
 ---
 
