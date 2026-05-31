@@ -56,7 +56,7 @@ ARCHIVED (also reachable from any non-PAID state)
 | `PENDING_APPROVAL` | `APPROVED` | `POST /bills/:id/approve` | Update `Approval` → `APPROVED`; create `Payment` row with `UNSCHEDULED` |
 | `PENDING_APPROVAL` | `REJECTED` | `POST /bills/:id/reject` | Update `Approval` → `REJECTED` |
 | `APPROVED` | `SCHEDULED` | `POST /payments/:id/schedule` (propagated from payment) | Set `Payment.scheduledFor` |
-| any non-`PAID` | `ARCHIVED` | `POST /bills/:id/archive` | Set `archivedAt` |
+| any non-`PAID`, non-`ARCHIVED` | `ARCHIVED` | `POST /bills/:id/archive` | Set `archivedAt`; if any Approval row is `PENDING`, transition it to `CANCELED` in the same transaction. `APPROVED`/`REJECTED` approvals are never rewritten. |
 | `APPROVED`/`SCHEDULED` | `PAID` | Payment reaches `PAID` | Bill moves automatically |
 
 `REJECTED` and `ARCHIVED` are terminal. `PAID` is terminal. Hard-delete is allowed only in `DRAFT`.
@@ -104,10 +104,12 @@ UNSCHEDULED ──► SCHEDULED ──► INITIATED ──► PAID
 ```
 PENDING ──► APPROVED
    │
-   └─────► REJECTED
+   ├─────► REJECTED
+   │
+   └─────► CANCELED   (auto, when the bill is archived from PENDING_APPROVAL)
 ```
 
-Single-step in the MVP — exactly one `Approval` row per bill, created when the bill enters `PENDING_APPROVAL`. The decision endpoints (`approve`, `reject`) update both the `Approval` and the parent `Bill` in a single transaction.
+Single-step in the MVP — exactly one `Approval` row per bill, created when the bill enters `PENDING_APPROVAL`. The decision endpoints (`approve`, `reject`) update both the `Approval` and the parent `Bill` in a single transaction. `archive` adds a third decision branch: if the Approval is still `PENDING` at archive time, it is transitioned to `CANCELED` (it never actually got a human decision); `APPROVED`/`REJECTED` rows are immutable historical records.
 
 ---
 

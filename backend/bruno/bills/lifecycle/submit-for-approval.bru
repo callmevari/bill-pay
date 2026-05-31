@@ -1,0 +1,17 @@
+meta {
+  name: Submit for approval
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/bills/{{billId}}/submit-for-approval
+  body: none
+  auth: none
+}
+
+docs {
+  Admin only. Transitions DRAFT -> PENDING_APPROVAL and creates the
+  Approval row assigned to the seeded Approver. 409 BILL_INVALID_TRANSITION
+  if the bill is not in DRAFT.
+}

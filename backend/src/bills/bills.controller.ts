@@ -29,6 +29,7 @@ import { BillResponseDto } from './dto/bill-response.dto';
 import { CreateBillDto } from './dto/create-bill.dto';
 import { CreateBillLineItemDto } from './dto/create-bill-line-item.dto';
 import { PaginatedBillsResponseDto } from './dto/paginated-bills-response.dto';
+import { RejectBillDto } from './dto/reject-bill.dto';
 import { UpdateBillDto } from './dto/update-bill.dto';
 import { UpdateBillLineItemDto } from './dto/update-bill-line-item.dto';
 
@@ -126,5 +127,71 @@ export class BillsController {
     @CurrentUser() actor: AuthUser,
   ): Promise<void> {
     return this.bills.removeLineItem(id, lineItemId, actor);
+  }
+
+  // ---- lifecycle ----------------------------------------------------
+
+  @Post(':id/submit-for-approval')
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Submit a DRAFT bill for approval (Admin only). 409 BILL_INVALID_TRANSITION otherwise.',
+  })
+  @ApiOkResponse({ type: BillResponseDto })
+  submitForApproval(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthUser,
+  ): Promise<BillResponseDto> {
+    return this.bills.submitForApproval(id, actor);
+  }
+
+  @Post(':id/approve')
+  @Roles(Role.ADMIN, Role.APPROVER)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Approve a PENDING_APPROVAL bill (Admin or Approver). Creates the linked Payment in UNSCHEDULED.',
+  })
+  @ApiOkResponse({ type: BillResponseDto })
+  approve(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthUser,
+  ): Promise<BillResponseDto> {
+    return this.bills.approve(id, actor);
+  }
+
+  @Post(':id/reject')
+  @Roles(Role.ADMIN, Role.APPROVER)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Reject a PENDING_APPROVAL bill (Admin or Approver). Optional notes stored on the Approval.',
+  })
+  @ApiOkResponse({ type: BillResponseDto })
+  reject(
+    @Param('id') id: string,
+    // Default to an empty DTO so a request with no body parses cleanly
+    // without `@Body()` resolving to `undefined`. The service still
+    // guards with `dto?.notes ?? null` belt-and-suspenders.
+    @Body() dto: RejectBillDto = new RejectBillDto(),
+    @CurrentUser() actor: AuthUser,
+  ): Promise<BillResponseDto> {
+    return this.bills.reject(id, dto, actor);
+  }
+
+  @Post(':id/archive')
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Archive a non-PAID, non-ARCHIVED bill (Admin only). Terminal off-ramp.',
+  })
+  @ApiOkResponse({ type: BillResponseDto })
+  archive(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthUser,
+  ): Promise<BillResponseDto> {
+    return this.bills.archive(id, actor);
   }
 }

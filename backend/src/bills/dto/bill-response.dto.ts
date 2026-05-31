@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BillStatus } from '@prisma/client';
 
+import { BillApprovalResponseDto } from './bill-approval-response.dto';
 import { BillLineItemResponseDto } from './bill-line-item-response.dto';
+import { BillPaymentResponseDto } from './bill-payment-response.dto';
 
 export class BillResponseDto {
   @ApiProperty()
@@ -45,4 +47,10 @@ export class BillResponseDto {
 
   @ApiProperty({ type: [BillLineItemResponseDto] })
   lineItems: BillLineItemResponseDto[];
+
+  @ApiProperty({ type: [BillApprovalResponseDto] })
+  approvals: BillApprovalResponseDto[];
+
+  @ApiPropertyOptional({ type: BillPaymentResponseDto, nullable: true })
+  payment: BillPaymentResponseDto | null;
 }
