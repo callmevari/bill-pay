@@ -26,6 +26,33 @@ describe('Vendors (e2e)', () => {
     actors = await seedMinimalData(prisma);
   });
 
+  it('POST /vendors persists a vendor with the right fields', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/vendors')
+      .set('x-user-id', actors.admin.id)
+      .send({
+        name: 'Acme Corp',
+        email: 'ap@acme.test',
+        defaultPaymentMethod: 'ACH',
+        streetAddress: '1 Market St',
+        city: 'San Francisco',
+        state: 'CA',
+        postalCode: '94105',
+        country: 'US',
+      });
+
+    expect(res.status).toBe(201);
+    const body = res.body as { id: string; name: string };
+    expect(body.name).toBe('Acme Corp');
+
+    const stored = await prisma.vendor.findUnique({ where: { id: body.id } });
+    expect(stored).not.toBeNull();
+    expect(stored?.email).toBe('ap@acme.test');
+    expect(stored?.defaultPaymentMethod).toBe('ACH');
+    expect(stored?.city).toBe('San Francisco');
+    expect(stored?.notes).toBeNull();
+  });
+
   it('DELETE /vendors/:id returns 409 VENDOR_HAS_BILLS when a bill references the vendor', async () => {
     await prisma.bill.create({
       data: {
