@@ -114,11 +114,11 @@ Paginated list with filters and sorts.
 - `q` — free-text, case-insensitive, matches `invoiceNumber`, `description`, or `vendor.name`.
 - `sort` — one of `createdAt | updatedAt | amount | status | dueDate | invoiceDate | invoiceNumber | vendor`, optionally prefixed with `-` for descending. Default `-createdAt`. `vendor` sorts by `vendor.name`.
 
-**200** → `{ data: BillResponse[], meta }`. Each `BillResponse` includes its `lineItems` array.
+**200** → `{ data: BillResponse[], meta }`. Each `BillResponse` includes its `lineItems` array, its `approvals` array (empty until the bill is submitted; one row per Approval after that), and its `payment` (the linked Payment snapshot, `null` until the bill is approved).
 
 ### `GET /bills/:id`
 
-**200** → bare `BillResponse` (with `lineItems`). **404 NOT_FOUND** if missing.
+**200** → bare `BillResponse` (with `lineItems`, `approvals`, and `payment`). **404 NOT_FOUND** if missing.
 
 ```json
 {
@@ -146,7 +146,9 @@ Paginated list with filters and sorts.
       "createdAt": "2026-05-29T10:00:00.000Z",
       "updatedAt": "2026-05-29T10:00:00.000Z"
     }
-  ]
+  ],
+  "approvals": [],
+  "payment": null
 }
 ```
 
@@ -205,11 +207,11 @@ Partial update. `quantity`, `unitPrice`, and `description` are non-null; `null` 
 
 ### `DELETE /bills/:id/line-items/:lineItemId` — Admin only
 
-**204** on success. **404 BILL_LINE_ITEM_NOT_FOUND** if missing/mismatched. **409 BILL_NOT_EDITABLE` for terminal bills.
+**204** on success. **404 BILL_LINE_ITEM_NOT_FOUND** if missing/mismatched. **409 BILL_NOT_EDITABLE** for terminal bills.
 
 ### Lifecycle
 
-Four action endpoints drive the bill through its state machine. Each is a `POST` returning the updated `BillResponse` with `200`. Invalid transitions return **`409 BILL_INVALID_TRANSITION`** with `details: { from, to, allowedFrom }`. Every successful transition runs inside a single Prisma transaction together with its side effects and an `ActivityLog` row.
+Four action endpoints drive the bill through its state machine. Each is a `POST` returning the updated `BillResponse` with `200` (the response surfaces the side effects of the transition inline — the updated `approvals` array and, after `approve`, the freshly-created `payment` snapshot). Invalid transitions return **`409 BILL_INVALID_TRANSITION`** with `details: { from, to, allowedFrom }`. The status flip is done with a Prisma compare-and-swap (`updateMany` with the current status as a predicate) inside the same transaction as the side effects, so concurrent requests can never both succeed: the second one re-reads the bill and surfaces the actual current status in `details.from`.
 
 #### `POST /bills/:id/submit-for-approval` — Admin only
 

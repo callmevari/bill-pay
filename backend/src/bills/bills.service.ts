@@ -48,7 +48,11 @@ const TERMINAL_STATUSES: BillStatus[] = [
 
 const BILL_STATUSES = new Set<string>(Object.values(BillStatus));
 
-const billInclude = { lineItems: true, payment: true } as const;
+const billInclude = {
+  lineItems: true,
+  approvals: { orderBy: { createdAt: 'asc' } },
+  payment: true,
+} as const;
 
 @Injectable()
 export class BillsService {
@@ -320,6 +324,9 @@ export class BillsService {
     id: string,
     actor: AuthUser,
   ): Promise<BillResponseDto> {
+    // Outside-tx fast-fail so the common case skips the transaction
+    // overhead. The CAS inside the transaction is the actual source of
+    // truth and protects against concurrent transitions.
     const bill = await this.loadOrThrow(id);
     this.ensureTransition(
       bill.status,
@@ -344,11 +351,13 @@ export class BillsService {
         });
       }
 
-      const result = await tx.bill.update({
-        where: { id },
-        data: { status: BillStatus.PENDING_APPROVAL },
-        include: billInclude,
-      });
+      const { fromStatus } = await this.casTransition(
+        tx,
+        id,
+        [BillStatus.DRAFT],
+        BillStatus.PENDING_APPROVAL,
+      );
+
       await tx.approval.create({
         data: {
           billId: id,
@@ -361,10 +370,13 @@ export class BillsService {
         id,
         actor,
         'bill.submitted_for_approval',
-        BillStatus.DRAFT,
+        fromStatus,
         BillStatus.PENDING_APPROVAL,
       );
-      return result;
+      return tx.bill.findUniqueOrThrow({
+        where: { id },
+        include: billInclude,
+      });
     });
 
     return toBillResponse(updated);
@@ -379,11 +391,22 @@ export class BillsService {
     );
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      // Look up the vendor inside the transaction so a race where the
-      // vendor is deleted between read and the Payment.create can't leak
-      // a raw 409 FOREIGN_KEY_VIOLATION through the response.
+      const { fromStatus } = await this.casTransition(
+        tx,
+        id,
+        [BillStatus.PENDING_APPROVAL],
+        BillStatus.APPROVED,
+      );
+
+      // After CAS, read the bill state so vendor lookup and Payment
+      // creation see the post-transition view (covers a concurrent PATCH
+      // changing amount/currency before the CAS).
+      const updatedBill = await tx.bill.findUniqueOrThrow({
+        where: { id },
+        select: { vendorId: true, amount: true, currency: true },
+      });
       const vendor = await tx.vendor.findUnique({
-        where: { id: bill.vendorId },
+        where: { id: updatedBill.vendorId },
         select: { defaultPaymentMethod: true },
       });
       if (!vendor) {
@@ -393,12 +416,6 @@ export class BillsService {
         });
       }
       const paymentMethod = vendor.defaultPaymentMethod ?? PaymentMethod.ACH;
-
-      const result = await tx.bill.update({
-        where: { id },
-        data: { status: BillStatus.APPROVED },
-        include: billInclude,
-      });
 
       // MVP invariant: exactly one Approval row per bill (created at
       // `submitForApproval`). See `docs/backend.md → Approval`.
@@ -418,8 +435,8 @@ export class BillsService {
           billId: id,
           status: PaymentStatus.UNSCHEDULED,
           method: paymentMethod,
-          amount: result.amount,
-          currency: result.currency,
+          amount: updatedBill.amount,
+          currency: updatedBill.currency,
         },
       });
 
@@ -428,7 +445,7 @@ export class BillsService {
         id,
         actor,
         'bill.approved',
-        BillStatus.PENDING_APPROVAL,
+        fromStatus,
         BillStatus.APPROVED,
       );
       await tx.activityLog.create({
@@ -443,8 +460,6 @@ export class BillsService {
         },
       });
 
-      // Re-read the bill so the response surfaces the freshly created
-      // Payment via the `include` projection.
       return tx.bill.findUniqueOrThrow({
         where: { id },
         include: billInclude,
@@ -459,6 +474,11 @@ export class BillsService {
     dto: RejectBillDto,
     actor: AuthUser,
   ): Promise<BillResponseDto> {
+    // `dto` may be `undefined` when the client sends an empty body with
+    // no JSON content-type (Nest validation runs only if a payload is
+    // present). Treat that as "no notes" rather than throwing.
+    const notes = dto?.notes ?? null;
+
     const bill = await this.loadOrThrow(id);
     this.ensureTransition(
       bill.status,
@@ -467,11 +487,12 @@ export class BillsService {
     );
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.bill.update({
-        where: { id },
-        data: { status: BillStatus.REJECTED },
-        include: billInclude,
-      });
+      const { fromStatus } = await this.casTransition(
+        tx,
+        id,
+        [BillStatus.PENDING_APPROVAL],
+        BillStatus.REJECTED,
+      );
 
       // MVP invariant: exactly one Approval row per bill (created at
       // `submitForApproval`). See `docs/backend.md → Approval`.
@@ -483,7 +504,7 @@ export class BillsService {
         data: {
           status: ApprovalStatus.REJECTED,
           approverId: actor.id,
-          notes: dto.notes ?? null,
+          notes,
         },
       });
 
@@ -492,38 +513,40 @@ export class BillsService {
         id,
         actor,
         'bill.rejected',
-        BillStatus.PENDING_APPROVAL,
+        fromStatus,
         BillStatus.REJECTED,
-        dto.notes ? { notes: dto.notes } : undefined,
+        notes !== null ? { notes } : undefined,
       );
 
-      return result;
+      return tx.bill.findUniqueOrThrow({
+        where: { id },
+        include: billInclude,
+      });
     });
 
     return toBillResponse(updated);
   }
 
   async archive(id: string, actor: AuthUser): Promise<BillResponseDto> {
-    const bill = await this.loadOrThrow(id);
-    this.ensureTransition(
-      bill.status,
-      [
-        BillStatus.DRAFT,
-        BillStatus.PENDING_APPROVAL,
-        BillStatus.APPROVED,
-        BillStatus.SCHEDULED,
-        BillStatus.REJECTED,
-      ],
-      BillStatus.ARCHIVED,
-    );
+    const allowedFrom = [
+      BillStatus.DRAFT,
+      BillStatus.PENDING_APPROVAL,
+      BillStatus.APPROVED,
+      BillStatus.SCHEDULED,
+      BillStatus.REJECTED,
+    ];
 
-    const fromStatus = bill.status;
+    const bill = await this.loadOrThrow(id);
+    this.ensureTransition(bill.status, allowedFrom, BillStatus.ARCHIVED);
+
     const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.bill.update({
-        where: { id },
-        data: { status: BillStatus.ARCHIVED, archivedAt: new Date() },
-        include: billInclude,
-      });
+      const { fromStatus } = await this.casTransition(
+        tx,
+        id,
+        allowedFrom,
+        BillStatus.ARCHIVED,
+        { archivedAt: new Date() },
+      );
       await this.logBillTransition(
         tx,
         id,
@@ -532,13 +555,69 @@ export class BillsService {
         fromStatus,
         BillStatus.ARCHIVED,
       );
-      return result;
+      return tx.bill.findUniqueOrThrow({
+        where: { id },
+        include: billInclude,
+      });
     });
 
     return toBillResponse(updated);
   }
 
   // ---- helpers ------------------------------------------------------
+
+  // Compare-and-swap on `Bill.status`: read the current status inside
+  // the transaction, validate it against the allowed-from set, and only
+  // flip the status if it has not changed since the read. If a
+  // concurrent transition wins the race, `updateMany.count` is 0; we
+  // re-read the bill and surface the actual current status in
+  // `details.from` so the caller sees the same shape as the regular
+  // pre-check error. Returns the pre-update status so callers can use
+  // it as the `fromStatus` of their `ActivityLog` row.
+  private async casTransition(
+    tx: Prisma.TransactionClient,
+    id: string,
+    allowedFrom: BillStatus[],
+    to: BillStatus,
+    extraData: Omit<Prisma.BillUncheckedUpdateInput, 'status'> = {},
+  ): Promise<{ fromStatus: BillStatus }> {
+    const fresh = await tx.bill.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!fresh) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: 'Bill not found.',
+      });
+    }
+    if (!allowedFrom.includes(fresh.status)) {
+      throw new ConflictException({
+        code: ErrorCode.BILL_INVALID_TRANSITION,
+        message: `Cannot transition bill from ${fresh.status} to ${to}.`,
+        details: { from: fresh.status, to, allowedFrom },
+      });
+    }
+
+    const cas = await tx.bill.updateMany({
+      where: { id, status: fresh.status },
+      data: { ...extraData, status: to },
+    });
+
+    if (cas.count === 0) {
+      const after = await tx.bill.findUniqueOrThrow({
+        where: { id },
+        select: { status: true },
+      });
+      throw new ConflictException({
+        code: ErrorCode.BILL_INVALID_TRANSITION,
+        message: `Cannot transition bill from ${after.status} to ${to}.`,
+        details: { from: after.status, to, allowedFrom },
+      });
+    }
+
+    return { fromStatus: fresh.status };
+  }
 
   private async loadOrThrow(id: string): Promise<BillWithRelations> {
     const bill = await this.prisma.bill.findUnique({

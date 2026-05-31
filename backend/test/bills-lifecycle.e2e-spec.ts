@@ -90,6 +90,16 @@ describe('Bills lifecycle (e2e)', () => {
     expect(approveBody.payment?.status).toBe('UNSCHEDULED');
     expect(approveBody.payment?.method).toBe('WIRE');
     expect(approveBody.payment?.amount).toBe('100.00');
+    // And the Approval is surfaced inline too — APPROVED with the
+    // acting user as approverId.
+    const approveBodyWithApprovals = approveRes.body as {
+      approvals: { status: string; approverId: string }[];
+    };
+    expect(approveBodyWithApprovals.approvals).toHaveLength(1);
+    expect(approveBodyWithApprovals.approvals[0].status).toBe('APPROVED');
+    expect(approveBodyWithApprovals.approvals[0].approverId).toBe(
+      actors.approver.id,
+    );
 
     const approval = await prisma.approval.findFirstOrThrow({
       where: { billId: bill.id },
@@ -192,7 +202,16 @@ describe('Bills lifecycle (e2e)', () => {
       .set('x-user-id', actors.approver.id)
       .send({ notes: 'Duplicate of INV-001.' });
     expect(res.status).toBe(200);
-    expect((res.body as { status: string }).status).toBe('REJECTED');
+    const rejectBody = res.body as {
+      status: string;
+      approvals: { status: string; notes: string | null }[];
+    };
+    expect(rejectBody.status).toBe('REJECTED');
+    // Notes are surfaced in the response (the gap we shipped on first
+    // pass of PR #5 — consumers had no way to see what they sent back).
+    expect(rejectBody.approvals).toHaveLength(1);
+    expect(rejectBody.approvals[0].status).toBe('REJECTED');
+    expect(rejectBody.approvals[0].notes).toBe('Duplicate of INV-001.');
 
     const approval = await prisma.approval.findFirstOrThrow({
       where: { billId: bill.id },
@@ -232,6 +251,83 @@ describe('Bills lifecycle (e2e)', () => {
     });
     expect(archiveLog.fromStatus).toBe(BillStatus.APPROVED);
     expect(archiveLog.toStatus).toBe(BillStatus.ARCHIVED);
+  });
+
+  it('concurrent approves on the same PENDING_APPROVAL bill: exactly one succeeds, the other returns 409', async () => {
+    const bill = await insertBill({
+      status: BillStatus.DRAFT,
+      invoiceNumber: 'INV-RACE',
+    });
+    await request(app.getHttpServer())
+      .post(`/api/v1/bills/${bill.id}/submit-for-approval`)
+      .set('x-user-id', actors.admin.id);
+
+    // Fire both approves concurrently. The CAS inside the transaction
+    // guarantees only one transition succeeds; the loser sees the
+    // already-flipped status reflected in `details.from`.
+    const [resA, resB] = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/api/v1/bills/${bill.id}/approve`)
+        .set('x-user-id', actors.approver.id),
+      request(app.getHttpServer())
+        .post(`/api/v1/bills/${bill.id}/approve`)
+        .set('x-user-id', actors.approver.id),
+    ]);
+
+    const statuses = [resA.status, resB.status].sort();
+    expect(statuses).toEqual([200, 409]);
+
+    const loser = resA.status === 409 ? resA : resB;
+    const loserBody = loser.body as {
+      error: { code: string; details: { from: string; to: string } };
+    };
+    expect(loserBody.error.code).toBe('BILL_INVALID_TRANSITION');
+    // The loser must report the actual post-race status (APPROVED), not
+    // the stale PENDING_APPROVAL the outer pre-check would have seen.
+    expect(loserBody.error.details.from).toBe('APPROVED');
+    expect(loserBody.error.details.to).toBe('APPROVED');
+
+    // Side effects landed exactly once: one Payment, one APPROVED
+    // Approval, one bill.approved activity row.
+    const payments = await prisma.payment.findMany({
+      where: { billId: bill.id },
+    });
+    expect(payments).toHaveLength(1);
+    const approvedRows = await prisma.approval.findMany({
+      where: { billId: bill.id, status: ApprovalStatus.APPROVED },
+    });
+    expect(approvedRows).toHaveLength(1);
+    const approveLogs = await prisma.activityLog.findMany({
+      where: {
+        entityType: 'BILL',
+        entityId: bill.id,
+        action: 'bill.approved',
+      },
+    });
+    expect(approveLogs).toHaveLength(1);
+  });
+
+  it('reject with truly no request body (no .send) returns 200 and stores null notes', async () => {
+    const bill = await insertBill({
+      status: BillStatus.DRAFT,
+      invoiceNumber: 'INV-REJ-NO-BODY',
+    });
+    await request(app.getHttpServer())
+      .post(`/api/v1/bills/${bill.id}/submit-for-approval`)
+      .set('x-user-id', actors.admin.id);
+
+    // Note: no `.send(...)` at all. Defensive default on the controller
+    // DTO + the `dto?.notes` guard in the service make this work.
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/bills/${bill.id}/reject`)
+      .set('x-user-id', actors.approver.id);
+
+    expect(res.status).toBe(200);
+    const approval = await prisma.approval.findFirstOrThrow({
+      where: { billId: bill.id },
+    });
+    expect(approval.status).toBe(ApprovalStatus.REJECTED);
+    expect(approval.notes).toBeNull();
   });
 
   // ---- illegal transitions ----------------------------------------

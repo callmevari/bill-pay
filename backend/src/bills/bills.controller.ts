@@ -171,7 +171,10 @@ export class BillsController {
   @ApiOkResponse({ type: BillResponseDto })
   reject(
     @Param('id') id: string,
-    @Body() dto: RejectBillDto,
+    // Default to an empty DTO so a request with no body parses cleanly
+    // without `@Body()` resolving to `undefined`. The service still
+    // guards with `dto?.notes ?? null` belt-and-suspenders.
+    @Body() dto: RejectBillDto = new RejectBillDto(),
     @CurrentUser() actor: AuthUser,
   ): Promise<BillResponseDto> {
     return this.bills.reject(id, dto, actor);
