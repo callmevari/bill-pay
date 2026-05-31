@@ -21,7 +21,8 @@
     "test:all": "pnpm test && pnpm test:e2e",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "prisma:studio:test": "DATABASE_URL=\"postgresql://postgres:postgres@localhost:5432/billpay?schema=test_e2e\" prisma studio"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
