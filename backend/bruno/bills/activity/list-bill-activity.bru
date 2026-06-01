@@ -1,0 +1,23 @@
+meta {
+  name: List bill activity
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/bills/{{billId}}/activity?page=1&pageSize=25
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  pageSize: 25
+}
+
+docs {
+  Newest-first activity feed for a bill. Includes the linked Payment's
+  entries (polymorphic via entityType + entityId) so reviewers can see
+  the full life of the work item from one feed. Readable by every
+  role. 404 NOT_FOUND when the bill id is unknown.
+}

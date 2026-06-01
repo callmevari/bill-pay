@@ -1,0 +1,23 @@
+meta {
+  name: List payment activity
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/payments/{{paymentId}}/activity?page=1&pageSize=25
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  pageSize: 25
+}
+
+docs {
+  Newest-first activity feed for a payment. Scoped to the payment's
+  own entries — bill-side mirror entries (e.g. bill.scheduled) live on
+  GET /bills/:id/activity. Readable by every role. 404
+  PAYMENT_NOT_FOUND when the payment id is unknown.
+}

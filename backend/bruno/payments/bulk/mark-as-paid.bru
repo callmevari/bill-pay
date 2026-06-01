@@ -1,0 +1,23 @@
+meta {
+  name: Bulk mark as paid
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/payments/bulk/mark-as-paid
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "ids": ["{{paymentId}}"]
+  }
+}
+
+docs {
+  Admin only. Marks every supplied SCHEDULED or INITIATED payment as
+  PAID and cascades the linked bill to PAID. Items in other statuses
+  fail per item with PAYMENT_INVALID_TRANSITION.
+}

@@ -19,6 +19,9 @@ import {
 } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 
+import { ActivityService } from '../activity/activity.service';
+import { ActivityQueryDto } from '../activity/dto/activity-query.dto';
+import { PaginatedActivityResponseDto } from '../activity/dto/paginated-activity-response.dto';
 import type { AuthUser } from '../auth/auth-user';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
@@ -36,7 +39,10 @@ import { UpdateBillLineItemDto } from './dto/update-bill-line-item.dto';
 @ApiTags('bills')
 @Controller('bills')
 export class BillsController {
-  constructor(private readonly bills: BillsService) {}
+  constructor(
+    private readonly bills: BillsService,
+    private readonly activity: ActivityService,
+  ) {}
 
   // ---- bills --------------------------------------------------------
 
@@ -193,5 +199,20 @@ export class BillsController {
     @CurrentUser() actor: AuthUser,
   ): Promise<BillResponseDto> {
     return this.bills.archive(id, actor);
+  }
+
+  // ---- activity ----------------------------------------------------
+
+  @Get(':id/activity')
+  @ApiOperation({
+    summary:
+      'List the activity log for a bill (newest first). Includes the linked payment’s entries.',
+  })
+  @ApiOkResponse({ type: PaginatedActivityResponseDto })
+  listActivity(
+    @Param('id') id: string,
+    @Query() query: ActivityQueryDto,
+  ): Promise<PaginatedActivityResponseDto> {
+    return this.activity.forBill(id, query);
   }
 }

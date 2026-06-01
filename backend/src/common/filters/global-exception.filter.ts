@@ -9,7 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import type { Response } from 'express';
 
-import { ErrorCode } from '../errors/error-codes';
+import { ErrorCode, defaultCodeForStatus } from '../errors/error-codes';
 
 interface ErrorEnvelope {
   error: {
@@ -70,7 +70,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         status,
         body: {
           error: {
-            code: this.defaultCodeForStatus(status),
+            code: defaultCodeForStatus(status),
             message: response,
           },
         },
@@ -87,7 +87,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const code =
       typeof responseObject.code === 'string'
         ? responseObject.code
-        : this.defaultCodeForStatus(status);
+        : defaultCodeForStatus(status);
 
     const messageSource = responseObject.message ?? responseObject.error;
     const message = Array.isArray(messageSource)
@@ -165,21 +165,5 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         },
       },
     };
-  }
-
-  private defaultCodeForStatus(status: number): string {
-    if (status === 400) {
-      return ErrorCode.VALIDATION_ERROR;
-    }
-    if (status === 401) {
-      return ErrorCode.UNAUTHENTICATED;
-    }
-    if (status === 403) {
-      return ErrorCode.INSUFFICIENT_PERMISSIONS;
-    }
-    if (status === 404) {
-      return ErrorCode.NOT_FOUND;
-    }
-    return `HTTP_${status}`;
   }
 }

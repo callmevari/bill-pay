@@ -1,0 +1,24 @@
+meta {
+  name: Bulk cancel
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/payments/bulk/cancel
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "ids": ["{{paymentId}}"]
+  }
+}
+
+docs {
+  Admin only. Cancels every supplied in-flight payment (SCHEDULED /
+  INITIATED / FAILED -> CANCELED) and cascades the linked bill from
+  SCHEDULED back to APPROVED. UNSCHEDULED / PAID / CANCELED items fail
+  per item with PAYMENT_INVALID_TRANSITION.
+}
