@@ -125,3 +125,21 @@ In frontend/src/components/layout/connection-dot.tsx:
 +          className="flex h-7 items-center justify-center px-1"
 +        >
 The connection status dot trigger is a non-focusable <span>, so keyboard users can’t reach the tooltip content. Consider making the trigger focusable.
+
+After Copilot's Review:
+
+In frontend/tsconfig.json
+
+tsconfig.json includes .next/types/**/*.ts but also excludes the entire .next directory. Because exclude is applied after include, this can prevent Next’s generated type files from being type-checked (and can make typed routes/components fail to compile on a clean checkout). Remove .next from exclude (the include patterns are already narrow).
+
+In frontend/src/lib/api.ts:
+
+apiFetch spreads options.headers by casting to Record<string,string>. If a caller passes a Headers instance or string[][] (both valid HeadersInit), the spread won’t behave correctly and headers can be dropped. Normalize with the Headers constructor and then set() your defaults.
+
+In frontend/src/components/providers/query-provider.tsx:
+
+ReactQueryDevtools is rendered unconditionally. This adds extra client JS in production builds (and can expose internal query state to end users). Gate it behind process.env.NODE_ENV === 'development'.
+
+In frontend/Dockerfile:
+
+Top-of-file comment claims a deps → build → prod-deps → runner shape, but this Dockerfile only has deps → build → runner. This is misleading for maintainers/debugging; update the comment to match the actual stages.

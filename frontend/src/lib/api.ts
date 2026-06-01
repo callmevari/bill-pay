@@ -72,21 +72,24 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   const { body, raw, skipAuth, headers, ...rest } = options;
 
   const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
-  const finalHeaders: Record<string, string> = {
-    Accept: raw ? 'text/csv' : 'application/json',
-    ...(headers as Record<string, string> | undefined),
-  };
+
+  // Normalize via the Headers constructor so all valid HeadersInit shapes
+  // (plain object, Headers instance, [string,string][]) merge correctly.
+  // A naive object spread would silently drop entries when the caller
+  // passes a Headers instance.
+  const finalHeaders = new Headers(headers);
+  finalHeaders.set('Accept', raw ? 'text/csv' : 'application/json');
 
   if (!skipAuth) {
     const userId = activeUserIdGetter();
     if (userId) {
-      finalHeaders['x-user-id'] = userId;
+      finalHeaders.set('x-user-id', userId);
     }
   }
 
   let serializedBody: BodyInit | undefined;
   if (body !== undefined && body !== null) {
-    finalHeaders['Content-Type'] = 'application/json';
+    finalHeaders.set('Content-Type', 'application/json');
     serializedBody = JSON.stringify(body);
   }
 

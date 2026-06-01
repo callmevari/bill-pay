@@ -34,7 +34,9 @@ export function QueryProvider({ children }: { children: ReactNode }): React.JSX.
   return (
     <QueryClientProvider client={client}>
       {children}
-      <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
+      {process.env.NODE_ENV === 'development' ? (
+        <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
+      ) : null}
     </QueryClientProvider>
   );
 }

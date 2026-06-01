@@ -1,6 +1,9 @@
-# Multi-stage build for the Bill Pay frontend. Mirrors the backend's
-# shape (deps → build → prod-deps → runner) so reviewers see the same
-# pattern on both sides.
+# Multi-stage build for the Bill Pay frontend: `deps` installs the
+# workspace lockfile, `build` runs `next build` against it, and `runner`
+# ships only the Next.js standalone output (which already contains its
+# own pruned `node_modules`) plus `.next/static` and `public`. The
+# backend image carries an explicit `prod-deps` stage because it does
+# not have a standalone runtime; Next.js handles that for us here.
 #
 # Build from the repo root (pnpm needs the workspace lockfile + manifests):
 #   docker build -f frontend/Dockerfile -t billpay-web .
