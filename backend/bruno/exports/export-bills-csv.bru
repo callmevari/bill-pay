@@ -1,0 +1,31 @@
+meta {
+  name: Export bills CSV
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/exports/bills.csv?sort=-createdAt
+  body: none
+  auth: none
+}
+
+params:query {
+  sort: -createdAt
+  ~status: APPROVED,SCHEDULED
+  ~vendorId: {{vendorId}}
+  ~minAmount: 100.00
+  ~maxAmount: 10000.00
+  ~dueDateFrom: 2026-05-01T00:00:00.000Z
+  ~dueDateTo: 2026-12-31T23:59:59.000Z
+  ~paymentMethod: ACH
+  ~q: stripe
+}
+
+docs {
+  CSV export of bills respecting every filter from GET /bills.
+  Readable by all roles. Returns text/csv with Content-Disposition
+  `attachment; filename="bills-YYYY-MM-DD.csv"`. No pagination — every
+  matching row is emitted. Disabled params (`~`) show every filter
+  the endpoint supports; enable any combination.
+}

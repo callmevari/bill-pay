@@ -14,13 +14,17 @@ Live HTTP surface of the Bill Pay API. Grows module by module; each entry matche
 |---|---|---|---|
 | `GET /vendors`, `GET /vendors/:id` | ✅ | ✅ | ✅ |
 | `POST /vendors`, `PATCH /vendors/:id`, `DELETE /vendors/:id` | ✅ | ❌ | ❌ |
-| `GET /bills`, `GET /bills/:id`, `GET /bills/:id/line-items` | ✅ | ✅ | ✅ |
+| `GET /bills`, `GET /bills/:id`, `GET /bills/:id/line-items`, `GET /bills/:id/activity` | ✅ | ✅ | ✅ |
 | `POST /bills`, `PATCH /bills/:id` | ✅ | ❌ | ❌ |
 | `POST /bills/:id/line-items`, `PATCH /bills/:id/line-items/:lineItemId`, `DELETE /bills/:id/line-items/:lineItemId` | ✅ | ❌ | ❌ |
 | `POST /bills/:id/submit-for-approval`, `POST /bills/:id/archive` | ✅ | ❌ | ❌ |
 | `POST /bills/:id/approve`, `POST /bills/:id/reject` | ✅ | ✅ | ❌ |
-| `GET /payments`, `GET /payments/:id` | ✅ | ✅ | ✅ |
+| `POST /bills/bulk/approve` | ✅ | ✅ | ❌ |
+| `POST /bills/bulk/archive`, `POST /bills/bulk/edit` | ✅ | ❌ | ❌ |
+| `GET /payments`, `GET /payments/:id`, `GET /payments/:id/activity` | ✅ | ✅ | ✅ |
 | `POST /payments/:id/{schedule,unschedule,release,mark-as-paid,cancel,retry}` | ✅ | ❌ | ❌ |
+| `POST /payments/bulk/{release,mark-as-paid,cancel}` | ✅ | ❌ | ❌ |
+| `GET /exports/bills.csv` | ✅ | ✅ | ✅ |
 
 ---
 
@@ -298,3 +302,119 @@ Every lifecycle action is `200`, CAS-atomic on `Payment.status`, runs in a singl
 ### Activity log (Payment actions)
 
 `entityType = PAYMENT`, `entityId = payment.id`. `action` ∈ `payment.created`, `payment.scheduled`, `payment.unscheduled`, `payment.released`, `payment.marked_as_paid`, `payment.canceled`, `payment.retried`. Bill-side mirror entries are listed in the Bills activity-log section above.
+
+---
+
+## Bulk operations
+
+Every bulk endpoint takes `{ ids: string[], ...action-specific fields }` and returns **`200`** with a per-item result envelope — partial failures never collapse the HTTP status. Each item runs in its own transaction via the existing single-item service method, so failures roll back only their own write (and only their own activity-log row) while the rest of the batch persists. Idempotency is whatever the underlying single-item endpoint gives you.
+
+**Request constraints**: `ids` is 1-100 entries, deduplicated; duplicates → `400 VALIDATION_ERROR`. Sending an empty `ids` → `400 VALIDATION_ERROR`.
+
+**Response shape** (same for every bulk endpoint):
+```json
+{
+  "results": [
+    { "id": "qn4...", "ok": true, "data": { /* updated entity */ } },
+    {
+      "id": "j8u...",
+      "ok": false,
+      "error": {
+        "code": "BILL_INVALID_TRANSITION",
+        "message": "Cannot transition bill from PAID to APPROVED.",
+        "details": { "from": "PAID", "to": "APPROVED", "allowedFrom": ["PENDING_APPROVAL"] }
+      }
+    }
+  ],
+  "summary": { "total": 2, "succeeded": 1, "failed": 1 }
+}
+```
+
+The per-item `error` envelope matches the single-item endpoint's envelope verbatim (same `code`, same `message`, same `details`) so the frontend can branch on the same codes without a special path. Missing ids surface as `NOT_FOUND` (bills) or `PAYMENT_NOT_FOUND` (payments).
+
+### Bills
+
+#### `POST /bills/bulk/approve` — Admin or Approver
+
+Body: `{ ids: string[] }`. Each item runs the same flow as `POST /bills/:id/approve`, including the auto-created `Payment` row and the `bill.approved` + `payment.created` activity entries. Items already approved or otherwise outside `PENDING_APPROVAL` fail with `BILL_INVALID_TRANSITION`.
+
+#### `POST /bills/bulk/archive` — Admin only
+
+Body: `{ ids: string[] }`. Each item runs `POST /bills/:id/archive`. `PAID` and already-`ARCHIVED` items fail with `BILL_INVALID_TRANSITION`. The cancel-on-archive cascades (PENDING `Approval` → `CANCELED`, in-flight `Payment` → `CANCELED`) apply per item, same as the single-item path.
+
+#### `POST /bills/bulk/edit` — Admin only
+
+Body: `{ ids: string[], fields: { dueDate?: ISO-8601, memo?: string | null } }`. `fields` must contain at least one of `dueDate` / `memo`; an empty object → `400 VALIDATION_ERROR`. `memo` maps to `Bill.description` (we surface the spec wording on the wire). `paymentMethod` is intentionally not bulk-editable — it lives on the linked `Payment`, not on the Bill. Terminal bills (`PAID`, `REJECTED`, `ARCHIVED`) fail per-item with `BILL_NOT_EDITABLE`.
+
+### Payments
+
+#### `POST /payments/bulk/release` — Admin only
+
+Body: `{ ids: string[] }`. Per item: `POST /payments/:id/release`. Items not in `SCHEDULED` fail with `PAYMENT_INVALID_TRANSITION`.
+
+#### `POST /payments/bulk/mark-as-paid` — Admin only
+
+Body: `{ ids: string[] }`. Per item: `POST /payments/:id/mark-as-paid`. Cascades the linked bill to `PAID` per item. Items not in `SCHEDULED` / `INITIATED` fail with `PAYMENT_INVALID_TRANSITION`.
+
+#### `POST /payments/bulk/cancel` — Admin only
+
+Body: `{ ids: string[] }`. Per item: `POST /payments/:id/cancel`. Cascades the linked bill back to `APPROVED` per item. Items not in `SCHEDULED` / `INITIATED` / `FAILED` fail with `PAYMENT_INVALID_TRANSITION`.
+
+---
+
+## Activity log reads
+
+The `ActivityLog` table is polymorphic by `(entityType, entityId)`. Two read endpoints scope it per parent entity.
+
+### `GET /bills/:id/activity` — any authenticated role
+
+Returns the activity entries for the bill **and** for its linked Payment (if any), newest first. This makes the bill detail page the single pane for "what happened to this bill and its payment". Paginated with shared `page` / `pageSize`.
+
+**404 NOT_FOUND** if the bill is missing.
+
+**200**
+```json
+{
+  "data": [
+    {
+      "id": "...",
+      "actorId": "qn4...",
+      "actorName": "María Sosa",
+      "actorRole": "ADMIN",
+      "entityType": "BILL",
+      "entityId": "j8u...",
+      "action": "bill.approved",
+      "fromStatus": "PENDING_APPROVAL",
+      "toStatus": "APPROVED",
+      "metadata": null,
+      "createdAt": "2026-05-29T12:00:00.000Z"
+    }
+  ],
+  "meta": { "page": 1, "pageSize": 25, "total": 4, "totalPages": 1 }
+}
+```
+
+`actorName` is resolved from the User row via a join at read time (so display names update if a user is renamed; `actorRole` stays the role at the time of the action). `metadata` is action-specific JSON whose shape is documented inline alongside each lifecycle action above.
+
+### `GET /payments/:id/activity` — any authenticated role
+
+Same shape, scoped to `entityType = PAYMENT`, `entityId = payment.id`. Bill-side mirror entries (e.g. `bill.scheduled` triggered by a payment action) live on the bill's activity feed, not here.
+
+**404 PAYMENT_NOT_FOUND** if the payment is missing.
+
+---
+
+## Exports
+
+### `GET /exports/bills.csv` — any authenticated role
+
+Returns a CSV of all bills matching the active filters. Accepts the **same query string as `GET /bills`** (`status`, `vendorId`, `minAmount`, `maxAmount`, `dueDateFrom`, `dueDateTo`, `paymentMethod`, `q`, `sort`) so the table and the export cannot drift on what a given filter means. No pagination — every matching row is emitted.
+
+Response headers:
+
+- `Content-Type: text/csv; charset=utf-8`
+- `Content-Disposition: attachment; filename="bills-YYYY-MM-DD.csv"` (date is server-side UTC)
+
+Columns, in order: `id, vendor, status, amount, dueDate, paymentMethod, invoiceNumber, memo, paymentStatus, paymentScheduledFor, paymentPaidAt, createdAt`. Money is the same `"1234.56"` decimal string the JSON API uses; dates are ISO-8601. Payment columns are empty cells when the bill has no payment yet. Quoting follows RFC 4180 (`csv-stringify`): values containing `,`, `"`, `\r`, or `\n` are wrapped in `"…"` and embedded `"` is doubled to `""`.
+
+Errors return JSON via the global exception filter, not CSV — an unknown `sort` field returns `400 VALIDATION_ERROR` with the regular `{ error: { code, message } }` envelope.
