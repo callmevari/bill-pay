@@ -26,7 +26,7 @@ interface NavItem {
 
 const PRIMARY_NAV: NavItem[] = [
   { label: 'Bills', href: '/', icon: Receipt },
-  { label: 'Vendors', href: '/vendors', icon: Store, disabled: true },
+  { label: 'Vendors', href: '/vendors', icon: Store },
 ];
 
 const SECONDARY_NAV: NavItem[] = [
