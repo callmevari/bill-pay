@@ -96,13 +96,18 @@ export class VendorsService {
       // Race: a bill may be created for this vendor between the count above
       // and the delete below. Translate the FK violation so the contract
       // still returns VENDOR_HAS_BILLS instead of FOREIGN_KEY_VIOLATION.
+      // Recompute billCount so the envelope matches the pre-count path.
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2003'
       ) {
+        const raceBillCount = await this.prisma.bill.count({
+          where: { vendorId: id },
+        });
         throw new ConflictException({
           code: ErrorCode.VENDOR_HAS_BILLS,
           message: 'Cannot delete a vendor that still has bills.',
+          details: { billCount: raceBillCount },
         });
       }
       throw error;
