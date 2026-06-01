@@ -16,3 +16,12 @@ export const ErrorCode = {
 } as const;
 
 export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
+
+export function defaultCodeForStatus(status: number): string {
+  if (status === 400) return ErrorCode.VALIDATION_ERROR;
+  if (status === 401) return ErrorCode.UNAUTHENTICATED;
+  if (status === 403) return ErrorCode.INSUFFICIENT_PERMISSIONS;
+  if (status === 404) return ErrorCode.NOT_FOUND;
+  if (status >= 500) return ErrorCode.INTERNAL_ERROR;
+  return `HTTP_${status}`;
+}

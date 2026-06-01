@@ -23,6 +23,18 @@ const BILLS_CSV_COLUMNS = [
   'createdAt',
 ] as const;
 
+// Prefix any cell whose first char would be interpreted by a spreadsheet
+// (Excel / Sheets / LibreOffice) as a formula. RFC 4180 doesn't address
+// this — the value is quoted correctly but still evaluated on open. The
+// leading apostrophe is the documented spreadsheet escape and is
+// stripped on display.
+const FORMULA_INJECTION_CHARS = new Set(['=', '+', '-', '@', '\t', '\r']);
+
+function sanitizeCsvCell(value: string): string {
+  if (value.length === 0) return value;
+  return FORMULA_INJECTION_CHARS.has(value[0]) ? `'${value}` : value;
+}
+
 @Injectable()
 export class ExportsService {
   constructor(private readonly bills: BillsService) {}
@@ -38,13 +50,13 @@ export class ExportsService {
 
     const records = rows.map((row) => ({
       id: row.id,
-      vendor: row.vendor.name,
+      vendor: sanitizeCsvCell(row.vendor.name),
       status: row.status,
       amount: row.amount.toFixed(2),
       dueDate: row.dueDate.toISOString(),
       paymentMethod: row.payment?.method ?? '',
-      invoiceNumber: row.invoiceNumber,
-      memo: row.description ?? '',
+      invoiceNumber: sanitizeCsvCell(row.invoiceNumber),
+      memo: sanitizeCsvCell(row.description ?? ''),
       paymentStatus: row.payment?.status ?? '',
       paymentScheduledFor: row.payment?.scheduledFor
         ? row.payment.scheduledFor.toISOString()

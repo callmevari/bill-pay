@@ -71,13 +71,17 @@ describe('runBulk', () => {
 });
 
 describe('toBulkItemError', () => {
-  it('passes through the structured envelope from an HttpException without an explicit code', () => {
-    const exception = new BadRequestException(
-      'amount must be a positive decimal',
-    );
-    const error = toBulkItemError(exception);
-    expect(error.code).toBe(ErrorCode.INTERNAL_ERROR);
-    expect(error.message).toBe('amount must be a positive decimal');
+  it('maps a string-bodied HttpException to the default code for its status', () => {
+    expect(
+      toBulkItemError(new BadRequestException('amount must be positive')),
+    ).toEqual({
+      code: ErrorCode.VALIDATION_ERROR,
+      message: 'amount must be positive',
+    });
+    expect(toBulkItemError(new NotFoundException('bill missing'))).toEqual({
+      code: ErrorCode.NOT_FOUND,
+      message: 'bill missing',
+    });
   });
 
   it('preserves the code + message + details when the HttpException carries the documented shape', () => {

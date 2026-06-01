@@ -139,6 +139,26 @@ describe('ExportsService', () => {
     expect(csv).toContain('ACH');
   });
 
+  it('prefixes cells starting with formula characters with a single quote to block spreadsheet injection', async () => {
+    bills.findAllForExport.mockResolvedValue([
+      makeRow({
+        id: 'b3',
+        vendorName: '=cmd|"/c calc"!A0',
+        status: BillStatus.DRAFT,
+        amount: '10.00',
+        dueDate: new Date('2026-06-01T00:00:00.000Z'),
+        invoiceNumber: '@injection',
+        description: '+1234',
+        payment: null,
+        createdAt: new Date('2026-05-01T00:00:00.000Z'),
+      }),
+    ]);
+    const csv = await service.billsCsv({ page: 1, pageSize: 25 });
+    expect(csv).toContain(`"'=cmd|""/c calc""!A0"`);
+    expect(csv).toContain(`'@injection`);
+    expect(csv).toContain(`'+1234`);
+  });
+
   it('filenameForToday returns bills-YYYY-MM-DD.csv with the UTC date', () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-06-01T03:00:00.000Z'));

@@ -1,6 +1,6 @@
 import { HttpException } from '@nestjs/common';
 
-import { ErrorCode } from '../errors/error-codes';
+import { ErrorCode, defaultCodeForStatus } from '../errors/error-codes';
 import {
   BulkItemErrorDto,
   BulkItemResultDto,
@@ -17,10 +17,11 @@ import {
 // so each per-item failure has to be normalized here, by hand.
 export function toBulkItemError(exception: unknown): BulkItemErrorDto {
   if (exception instanceof HttpException) {
+    const status = exception.getStatus();
     const response = exception.getResponse();
     if (typeof response === 'string') {
       return {
-        code: ErrorCode.INTERNAL_ERROR,
+        code: defaultCodeForStatus(status),
         message: response,
       };
     }
@@ -30,7 +31,7 @@ export function toBulkItemError(exception: unknown): BulkItemErrorDto {
       details?: unknown;
     };
     const code =
-      typeof obj.code === 'string' ? obj.code : ErrorCode.INTERNAL_ERROR;
+      typeof obj.code === 'string' ? obj.code : defaultCodeForStatus(status);
     const message =
       typeof obj.message === 'string' ? obj.message : exception.message;
     const error: BulkItemErrorDto = { code, message };

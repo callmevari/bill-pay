@@ -1,9 +1,7 @@
 import { Controller, Get, Query, Res } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import type { Response } from 'express';
 
-import { Roles } from '../auth/roles.decorator';
 import { BillListQueryDto } from '../bills/dto/bill-list-query.dto';
 import { ExportsService } from './exports.service';
 
@@ -25,7 +23,6 @@ export class ExportsController {
   // pollute the error envelope. The Res-pass-through pattern leaves
   // the error path entirely on the filter.
   @Get('bills.csv')
-  @Roles(Role.ADMIN, Role.APPROVER, Role.VIEWER)
   @ApiOperation({
     summary:
       'Export bills as CSV (all roles). Respects the same query as GET /bills; no pagination.',
