@@ -5,6 +5,7 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsDefined,
   IsISO8601,
   IsObject,
   IsOptional,
@@ -67,6 +68,7 @@ export class BulkEditBillFieldsDto {
 
 export class BulkEditBillsDto extends BulkBillIdsDto {
   @ApiProperty({ type: BulkEditBillFieldsDto })
+  @IsDefined({ message: 'fields is required.' })
   @IsObject()
   @ValidateNested()
   @Type(() => BulkEditBillFieldsDto)
