@@ -40,7 +40,7 @@ export function Sidebar(): React.JSX.Element {
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
       <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
+        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#00a6d5] text-white">
           <Wallet className="size-4" />
         </div>
         <div className="flex flex-col leading-tight">
