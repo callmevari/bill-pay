@@ -1,0 +1,30 @@
+meta {
+  name: Add line item
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/bills/{{billId}}/line-items
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "description": "Added via Bruno",
+    "quantity": "3",
+    "unitPrice": "100.50"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar('lineItemId', res.getBody().id);
+  }
+}
+
+docs {
+  Admin only. `total` is computed server-side as quantity * unitPrice
+  (here = 301.50). Stores the new id in `lineItemId`.
+}

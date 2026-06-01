@@ -1,0 +1,23 @@
+meta {
+  name: Reject
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/bills/{{billId}}/reject
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "notes": "Vendor billed for the wrong period."
+  }
+}
+
+docs {
+  Admin or Approver. Transitions PENDING_APPROVAL -> REJECTED. The
+  optional `notes` are stored on Approval.notes and surface in the
+  activity log entry's `metadata`.
+}

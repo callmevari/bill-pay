@@ -1,0 +1,28 @@
+meta {
+  name: Approve
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/bills/{{billId}}/approve
+  body: none
+  auth: none
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && body.payment) {
+    bru.setVar('paymentId', body.payment.id);
+  }
+}
+
+docs {
+  Admin or Approver. Transitions PENDING_APPROVAL -> APPROVED, updates
+  the Approval row, and creates the linked Payment in UNSCHEDULED with
+  method = vendor.defaultPaymentMethod ?? 'ACH'. Switch to the
+  local-approver env to confirm approvers can run it; viewer -> 403.
+
+  Post-response stores `payment.id` in the `paymentId` var so the
+  requests under payments/lifecycle/ can run immediately after.
+}

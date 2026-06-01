@@ -1,0 +1,37 @@
+meta {
+  name: Create vendor
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/vendors
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "name": "Acme Corp",
+    "email": "ap@acme.com",
+    "defaultPaymentMethod": "ACH",
+    "streetAddress": "1 Market St",
+    "city": "San Francisco",
+    "state": "CA",
+    "postalCode": "94105",
+    "country": "US",
+    "notes": "Created via Bruno"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("vendorId", res.getBody().id);
+  }
+}
+
+docs {
+  Admin only. On 201 the new id is stored in the `vendorId` var so the
+  get/update/delete requests below can run against it. Switch to the
+  approver or viewer environment to confirm a 403.
+}

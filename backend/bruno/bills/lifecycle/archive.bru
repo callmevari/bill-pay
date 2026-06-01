@@ -1,0 +1,17 @@
+meta {
+  name: Archive
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/bills/{{billId}}/archive
+  body: none
+  auth: none
+}
+
+docs {
+  Admin only. Sets `archivedAt` and status = ARCHIVED. Valid from any
+  non-PAID, non-ARCHIVED status; otherwise 409 BILL_INVALID_TRANSITION
+  with `details.allowedFrom`. Archival is permanent.
+}

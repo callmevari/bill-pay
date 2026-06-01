@@ -1,0 +1,16 @@
+meta {
+  name: Delete vendor
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/vendors/{{vendorId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Admin only. 204 on success; 409 VENDOR_HAS_BILLS if the vendor still
+  has bills (try a seeded vendor id to see the guard).
+}

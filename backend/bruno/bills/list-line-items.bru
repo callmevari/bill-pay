@@ -1,0 +1,23 @@
+meta {
+  name: List line items
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/bills/{{billId}}/line-items
+  body: none
+  auth: none
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && Array.isArray(body) && body.length > 0) {
+    bru.setVar('lineItemId', body[0].id);
+  }
+}
+
+docs {
+  Sub-resource. Stores the first line item's id in `lineItemId` for the
+  patch/delete requests below. Readable by all roles.
+}

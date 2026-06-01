@@ -5,7 +5,23 @@ export const ErrorCode = {
   FOREIGN_KEY_VIOLATION: 'FOREIGN_KEY_VIOLATION',
   UNAUTHENTICATED: 'UNAUTHENTICATED',
   INSUFFICIENT_PERMISSIONS: 'INSUFFICIENT_PERMISSIONS',
+  VENDOR_HAS_BILLS: 'VENDOR_HAS_BILLS',
+  VENDOR_NOT_FOUND: 'VENDOR_NOT_FOUND',
+  BILL_NOT_EDITABLE: 'BILL_NOT_EDITABLE',
+  BILL_LINE_ITEM_NOT_FOUND: 'BILL_LINE_ITEM_NOT_FOUND',
+  BILL_INVALID_TRANSITION: 'BILL_INVALID_TRANSITION',
+  PAYMENT_NOT_FOUND: 'PAYMENT_NOT_FOUND',
+  PAYMENT_INVALID_TRANSITION: 'PAYMENT_INVALID_TRANSITION',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 
 export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
+
+export function defaultCodeForStatus(status: number): string {
+  if (status === 400) return ErrorCode.VALIDATION_ERROR;
+  if (status === 401) return ErrorCode.UNAUTHENTICATED;
+  if (status === 403) return ErrorCode.INSUFFICIENT_PERMISSIONS;
+  if (status === 404) return ErrorCode.NOT_FOUND;
+  if (status >= 500) return ErrorCode.INTERNAL_ERROR;
+  return `HTTP_${status}`;
+}

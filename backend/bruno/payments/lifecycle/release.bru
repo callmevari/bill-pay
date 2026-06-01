@@ -1,0 +1,15 @@
+meta {
+  name: Release
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/payments/{{paymentId}}/release
+  body: none
+  auth: none
+}
+
+docs {
+  Admin only. SCHEDULED -> INITIATED. Sets initiatedAt. Bill stays SCHEDULED.
+}

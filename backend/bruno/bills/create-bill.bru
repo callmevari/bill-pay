@@ -1,0 +1,39 @@
+meta {
+  name: Create bill
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/bills
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "invoiceNumber": "INV-BRUNO-{{$timestamp}}",
+    "vendorId": "{{vendorId}}",
+    "description": "Created via Bruno",
+    "amount": "1234.56",
+    "currency": "USD",
+    "invoiceDate": "2026-05-01T00:00:00.000Z",
+    "dueDate": "2026-05-31T00:00:00.000Z",
+    "lineItems": [
+      { "description": "Engineering work", "quantity": "2", "unitPrice": "617.28" }
+    ]
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar('billId', res.getBody().id);
+  }
+}
+
+docs {
+  Admin only. Needs `vendorId` in the active env — run `vendors > Create
+  vendor` first (it sets the var) or grab one from `vendors > List
+  vendors`. Stores the new bill id in `billId`. Try the request as
+  approver or viewer to confirm 403.
+}

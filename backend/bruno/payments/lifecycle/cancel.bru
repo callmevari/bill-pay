@@ -1,0 +1,16 @@
+meta {
+  name: Cancel
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/payments/{{paymentId}}/cancel
+  body: none
+  auth: none
+}
+
+docs {
+  Admin only. SCHEDULED, INITIATED, or FAILED -> CANCELED. Sets canceledAt.
+  If bill was SCHEDULED, it goes back to APPROVED.
+}

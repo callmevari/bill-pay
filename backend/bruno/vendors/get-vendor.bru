@@ -1,0 +1,15 @@
+meta {
+  name: Get vendor
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/vendors/{{vendorId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Uses the `vendorId` var set by Create vendor. Readable by all roles.
+}

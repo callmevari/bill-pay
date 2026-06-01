@@ -1,0 +1,25 @@
+meta {
+  name: Update bill
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/bills/{{billId}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "description": "Updated via Bruno",
+    "dueDate": "2026-06-15T00:00:00.000Z"
+  }
+}
+
+docs {
+  Admin only. PATCH on a bill in PAID/REJECTED/ARCHIVED returns
+  409 BILL_NOT_EDITABLE with `details.status`. Sending `null` on
+  required-non-null fields (amount/currency/invoiceDate/dueDate) returns
+  400 VALIDATION_ERROR.
+}

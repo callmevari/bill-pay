@@ -87,7 +87,7 @@ Specialized agents live in `.claude/agents/`:
 
 - `backend-engineer.md` — owns `backend/`, Prisma schema/migrations/seed, `docs/api-contract.md`, backend section of root README, backend services in `docker-compose.yml`.
 - `frontend-engineer.md` — owns `frontend/`, frontend section of root README, frontend env. *(To be drafted when the frontend phase nears.)*
-- `reviewer.md` — final audits before declaring work done; reviews both sides and triages external PR reviews dropped in `docs/prs-reviews/`.
+- `reviewer.md` — final audits before declaring work done; reviews both sides and triages external PR reviews dropped in `docs/backend-pr-reviews/`.
 
 **Cross-cutting rule**: an agent that needs a change outside its scope stops and asks the human. The human is the broker between backend and frontend. This protects the API contract from silent drift.
 
@@ -106,7 +106,55 @@ Instant red flags. None ship.
 
 ## Quality bar (principle)
 
-Before any slice is "done": build/lint/typecheck/test pass on the touched side, the golden path of the touched workflow has been exercised manually, `docs/api-contract.md` matches the live surface, README setup still runs from a clean clone. Per-side commands live in the agent playbooks.
+Before any slice is "done": build/lint/typecheck/test (unit + e2e) pass on the touched side, the golden path of the touched workflow has been exercised manually, `docs/api-contract.md` matches the live surface, README setup still runs from a clean clone. Per-side commands live in the agent playbooks. The testing contract — how to design the unit/e2e suite for any new module — lives in the `## Testing` section below; the deeper recipe is in `docs/backend.md → Testing strategy`.
+
+Additionally, before declaring a module done the engineer who owns it runs a reviewer pass on the diff — **inline** (an adversarial pass against `.claude/agents/reviewer.md`, covering boundary inputs, null on required-non-null fields, error-envelope shape on every non-happy path, and role gating) for simple CRUD modules, and **as a spawned `reviewer` subagent** for anything touching a state machine, lifecycle transitions, bulk operations, or cross-module side effects. Any BLOCKER or MAJOR finding is fixed before the PR opens; MINOR / NIT findings either land in the same PR or are called out explicitly in the PR body.
+
+| Work type | Reviewer pass |
+|---|---|
+| Simple business-logic CRUD (Vendors-like) | inline |
+| Lifecycle / state machine (Bills lifecycle, Approvals, Payments) | spawn `reviewer` subagent |
+| Bulk / partial-failure surfaces | spawn `reviewer` subagent |
+| **Test infrastructure / harness** (jest configs, e2e setup, isolation primitives, fixture helpers) | spawn `reviewer` subagent — concurrency, env override, parallel workers, and shared-state races are state-machine-equivalent and the author is the worst-placed reader |
+| Cross-cutting tooling (docker-compose, prisma config, build / lint config when it changes execution semantics) | spawn `reviewer` subagent |
+| Docs / config (text, simple settings without execution semantics) | inline |
+
+## Testing
+
+Every feature / module ships with **both** a unit suite and an e2e suite. They have non-overlapping jobs — never write the same assertion in both layers.
+
+### Where each layer belongs
+
+| Layer | Lives in | Runs with | What it covers | What it does NOT cover |
+|---|---|---|---|---|
+| **Unit** | `backend/src/**/*.spec.ts` | `pnpm --filter backend test` | Logic where the answer lives in code paths: parsers, allow-lists, guards as decisions, math, mappers (when non-trivial), error-translation branches. `PrismaService` is mocked. | Anything whose correctness depends on actually persisting / reading / joining rows. |
+| **E2E** | `backend/test/**/*.e2e-spec.ts` | `pnpm --filter backend test:e2e` | Anything that has to be true once the request reaches Postgres: persistence, type round-tripping (`Decimal(12, 2)`, `DateTime`, JSON metadata), nested writes, transaction atomicity (activity-log row visible iff the parent write committed), contract translations of Prisma error codes (e.g. `P2003` → `404 VENDOR_NOT_FOUND`), real list queries (filters / sort / pagination producing the documented `{data, meta}` against real SQL), role guard wired end-to-end through HTTP. | Branch-by-branch validation that the unit layer already covers. |
+
+### Designing the test suite for a new module / feature
+
+Walk the controller endpoint by endpoint. For each endpoint, ask **"what is the assertion?"** and route it to the right layer:
+
+1. If the assertion is about a **decision in code** (rejects unknown enum, hits guard, validates math) → unit test.
+2. If the assertion is about **persistence**: each write endpoint (`POST` / `PATCH`) gets **one happy-path e2e** that hits the endpoint AND verifies the persisted row(s) via Prisma (the right amount, decimals to 2dp, dates as `DateTime`, nested children, related activity-log row).
+3. Every **FK field accepted in a request body** (`vendorId`, `billId`, `approverId`, etc.) gets **one e2e** with an invalid id, asserting the translated error code (`404 *_NOT_FOUND`) — not the raw Prisma `409 FOREIGN_KEY_VIOLATION`.
+4. Every **role-restricted endpoint** gets at least **one e2e with the wrong role** asserting 403 + `INSUFFICIENT_PERMISSIONS` — proves the guard is wired through the global pipeline, not just the decorator.
+5. Every **list endpoint** with filters / sort / pagination gets **one e2e** that seeds a deterministic dataset and asserts the order + the `meta` envelope.
+6. Every **terminal/guard transition** (e.g. `BILL_NOT_EDITABLE` on PAID) gets **one e2e** end-to-end so the transaction rolls back cleanly.
+
+Anti-patterns:
+
+- ❌ Asserting "PrismaService was called with X" in a unit test — that duplicates code without verifying behaviour.
+- ❌ Writing an e2e per validation branch — the parser is unit territory.
+- ❌ Writing a unit test for a calculation whose correctness depends on Prisma `Decimal` precision — that's e2e.
+- ❌ Mocking Prisma in an e2e — defeats the entire point of the layer.
+
+### Setup primitives
+
+- **Isolation**: e2e uses the `test_e2e` Postgres schema in the same container as dev (`backend/.env.test`). The `public` schema is never touched.
+- **Reset + seed**: `backend/test/helpers/db.ts` exposes `resetDatabase()` and `seedMinimalData()`. Every e2e spec calls them in `beforeEach`; tests are independent.
+- **App boot**: `backend/test/helpers/app.ts` boots a real Nest app with the same global wiring as `main.ts` (prefix + `ValidationPipe`); the exception filter is registered as `APP_FILTER` and picked up automatically.
+
+When a new module adds a meaningful new shape of test (state machine transitions, partial-failure bulk responses, async flows), extend `docs/backend.md → Testing strategy` with the new pattern so the recipe stays current.
 
 ## Git commits
 
@@ -125,6 +173,19 @@ Before any slice is "done": build/lint/typecheck/test pass on the touched side, 
 - A feature PR holds **4-5 commits max** and **15-25 files changed (30 absolute ceiling)**. If work exceeds this, split it into multiple PRs along module or concern boundaries.
 - The one-time **bootstrap/foundation PR** (scaffold, tooling, initial schema, docs) is the lone exception — it is a single coherent foundation and may exceed these limits. Every later PR obeys them.
 - Push to update an open PR rather than opening a new one for the same slice.
+
+### develop → main cadence
+
+Feature work lives on `develop`. `main` is updated by a separate `develop → main` PR at **coherent milestones** — never per feature, never only at the end. The milestones for this project, in order:
+
+| Milestone | Trigger | What lands on `main` |
+|---|---|---|
+| Backend MVP | End of Phase 7 (vendors + bills + approvals + payments + bulk + activity + exports complete) | A backend that is feature-complete and deployable standalone |
+| Frontend MVP | End of Phase 11 (full UI workflows wired) | Stack usable end-to-end |
+| Polish | End of Phase 12 (final sweep, README setup verified from a clean clone) | Reviewer-ready state |
+| Deploy | End of Phase 13 (hosted AWS deployment) | Submission state |
+
+At every milestone, open the `develop → main` PR, wait for review/Copilot like any other PR, then merge. Between milestones, `main` is intentionally behind — that is the signal that the work is in flight on `develop`.
 
 ### PR bodies
 

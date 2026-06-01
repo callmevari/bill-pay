@@ -1,0 +1,23 @@
+meta {
+  name: Bulk release
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/payments/bulk/release
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "ids": ["{{paymentId}}"]
+  }
+}
+
+docs {
+  Admin only. Releases every supplied SCHEDULED payment (SCHEDULED ->
+  INITIATED). Items not in SCHEDULED fail with
+  PAYMENT_INVALID_TRANSITION. Per-item result like every bulk endpoint.
+}
