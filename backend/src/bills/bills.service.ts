@@ -557,10 +557,51 @@ export class BillsService {
         data: { status: ApprovalStatus.CANCELED },
       });
 
-      const metadata: Record<string, unknown> | undefined =
-        cancelled.count > 0
-          ? { cancelledApprovals: cancelled.count }
-          : undefined;
+      // Cancel an in-flight Payment too. Any non-terminal Payment status
+      // is abandoned — the bill is gone from the active queue.
+      const existingPayment = await tx.payment.findUnique({
+        where: { billId: id },
+      });
+      let cancelledPaymentId: string | null = null;
+      const inFlight: PaymentStatus[] = [
+        PaymentStatus.UNSCHEDULED,
+        PaymentStatus.SCHEDULED,
+        PaymentStatus.INITIATED,
+        PaymentStatus.FAILED,
+      ];
+      if (existingPayment && inFlight.includes(existingPayment.status)) {
+        // CAS the Payment status with the just-read value as predicate
+        // so a concurrent Payment lifecycle action that flipped the row
+        // between our read and our write cannot be silently overwritten.
+        const cas = await tx.payment.updateMany({
+          where: { id: existingPayment.id, status: existingPayment.status },
+          data: { status: PaymentStatus.CANCELED, canceledAt: new Date() },
+        });
+        if (cas.count === 1) {
+          await tx.activityLog.create({
+            data: {
+              entityType: ActivityEntityType.PAYMENT,
+              entityId: existingPayment.id,
+              actorId: actor.id,
+              actorRole: actor.role,
+              action: 'payment.canceled',
+              fromStatus: existingPayment.status,
+              toStatus: PaymentStatus.CANCELED,
+              metadata: { triggeredBy: 'bill.archived' },
+            },
+          });
+          cancelledPaymentId = existingPayment.id;
+        }
+        // If CAS lost the race (cas.count === 0), the Payment moved to
+        // another state in parallel — let the winning transition stand
+        // and skip our cascade rather than overwriting it. The bill is
+        // still archived; the Payment audit trail belongs to whichever
+        // action got there first.
+      }
+
+      const metadata: Record<string, unknown> = {};
+      if (cancelled.count > 0) metadata.cancelledApprovals = cancelled.count;
+      if (cancelledPaymentId) metadata.cancelledPayment = cancelledPaymentId;
 
       await this.logBillTransition(
         tx,
@@ -569,7 +610,7 @@ export class BillsService {
         'bill.archived',
         fromStatus,
         BillStatus.ARCHIVED,
-        metadata,
+        Object.keys(metadata).length > 0 ? metadata : undefined,
       );
       return tx.bill.findUniqueOrThrow({
         where: { id },

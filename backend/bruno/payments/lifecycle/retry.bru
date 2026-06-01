@@ -1,0 +1,17 @@
+meta {
+  name: Retry
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/payments/{{paymentId}}/retry
+  body: none
+  auth: none
+}
+
+docs {
+  Admin only. FAILED -> SCHEDULED. Clears failedAt and failureReason.
+  FAILED is reachable only via seed data; use a seeded FAILED payment
+  to exercise this endpoint.
+}

@@ -1,0 +1,40 @@
+meta {
+  name: List payments
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/payments?page=1&pageSize=25&sort=-createdAt
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  pageSize: 25
+  sort: -createdAt
+  ~status: SCHEDULED,INITIATED
+  ~method: ACH
+  ~billId: {{billId}}
+  ~vendorId: {{vendorId}}
+  ~minAmount: 100.00
+  ~maxAmount: 10000.00
+  ~scheduledForFrom: 2026-06-01T00:00:00.000Z
+  ~scheduledForTo: 2026-12-31T23:59:59.000Z
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && Array.isArray(body.data) && body.data.length > 0) {
+    bru.setVar('paymentId', body.data[0].id);
+    bru.setVar('billId', body.data[0].billId);
+  }
+}
+
+docs {
+  Paginated payments list. Disabled (~) params show every filter; enable
+  any combination. Stores the first payment's id in `paymentId` and the
+  linked `billId` so the lifecycle requests below can run immediately.
+  Readable by all roles.
+}

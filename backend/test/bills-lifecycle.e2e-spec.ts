@@ -300,8 +300,14 @@ describe('Bills lifecycle (e2e)', () => {
         action: 'bill.archived',
       },
     });
-    // Nothing was PENDING -> no metadata.
-    expect(archiveLog.metadata).toBeNull();
+    // Approval was APPROVED so no Approval cancel. But the approve step
+    // created a Payment in UNSCHEDULED; archive cascades it to CANCELED
+    // (Phase 6) and records the id in metadata.cancelledPayment.
+    const payment = await prisma.payment.findUniqueOrThrow({
+      where: { billId: bill.id },
+    });
+    expect(payment.status).toBe('CANCELED');
+    expect(archiveLog.metadata).toEqual({ cancelledPayment: payment.id });
   });
 
   it('reject stores notes on the Approval and writes a rejection log entry', async () => {

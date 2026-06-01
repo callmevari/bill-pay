@@ -1,0 +1,15 @@
+meta {
+  name: Unschedule
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/payments/{{paymentId}}/unschedule
+  body: none
+  auth: none
+}
+
+docs {
+  Admin only. SCHEDULED -> UNSCHEDULED. Clears scheduledFor. Bill SCHEDULED -> APPROVED.
+}
