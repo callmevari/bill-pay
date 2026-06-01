@@ -283,13 +283,13 @@ Every lifecycle action is `200`, CAS-atomic on `Payment.status`, runs in a singl
 | `schedule` | `UNSCHEDULED → SCHEDULED` | `{ "scheduledFor": ISO-8601 }` | Set `scheduledFor`; Bill `APPROVED → SCHEDULED`. Past timestamps are accepted for back-dating operational scenarios; the contract does not enforce future-only. |
 | `unschedule` | `SCHEDULED → UNSCHEDULED` | none | Clear `scheduledFor`; Bill `SCHEDULED → APPROVED` |
 | `release` | `SCHEDULED → INITIATED` | none | Set `initiatedAt` |
-| `mark-as-paid` | `SCHEDULED | INITIATED → PAID` | none | Set `paidAt`; Bill `SCHEDULED → PAID` |
-| `cancel` | `SCHEDULED | INITIATED | FAILED → CANCELED` | none | Set `canceledAt`; Bill `SCHEDULED → APPROVED` |
+| `mark-as-paid` | `SCHEDULED \| INITIATED → PAID` | none | Set `paidAt`; Bill `SCHEDULED → PAID` |
+| `cancel` | `SCHEDULED \| INITIATED \| FAILED → CANCELED` | none | Set `canceledAt`; Bill `SCHEDULED → APPROVED` |
 | `retry` | `FAILED → SCHEDULED` | none | Clear `failedAt`, `failureReason` |
 
 ### Cancel-on-archive
 
-`POST /bills/:id/archive` (Phase 5) cancels an in-flight Payment (`UNSCHEDULED | SCHEDULED | INITIATED | FAILED`) in the same transaction as the bill archive, sets `Payment.canceledAt`, and records `metadata: { cancelledPayment: paymentId }` on the `bill.archived` activity entry. A sibling `payment.canceled` entry is written with `metadata: { triggeredBy: "bill.archived" }`.
+`POST /bills/:id/archive` (Phase 5) cancels an in-flight Payment (`UNSCHEDULED`, `SCHEDULED`, `INITIATED`, or `FAILED`) in the same transaction as the bill archive, sets `Payment.canceledAt`, and records `metadata: { cancelledPayment: paymentId }` on the `bill.archived` activity entry. A sibling `payment.canceled` entry is written with `metadata: { triggeredBy: "bill.archived" }`.
 
 ### Error codes (Payments)
 
