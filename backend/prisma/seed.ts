@@ -160,6 +160,16 @@ interface BillSpec {
   paidDaysAgo?: number;
   archivedFrom?: 'DRAFT' | 'APPROVED';
   rejectionNote?: string;
+  // Drives a payment into a non-happy terminal state after the normal
+  // bill-status walk. `FAILED` walks scheduled → initiated → failed and
+  // leaves the bill in SCHEDULED (matches the contract: there is no
+  // `markAsFailed` endpoint, so the bill never moves back). `CANCELED`
+  // walks scheduled → canceled and leaves the bill in APPROVED (direct
+  // cancel un-schedules the bill).
+  paymentEndState?: 'FAILED' | 'CANCELED';
+  failedDaysAgo?: number;
+  failureReason?: string;
+  canceledDaysAgo?: number;
 }
 
 const BILLS_SEED: BillSpec[] = [
@@ -173,6 +183,10 @@ const BILLS_SEED: BillSpec[] = [
   ...scheduledBills(),
   // 8 PAID
   ...paidBills(),
+  // 2 SCHEDULED with FAILED payment
+  ...failedPaymentBills(),
+  // 2 APPROVED with CANCELED payment (direct cancel)
+  ...canceledPaymentBills(),
   // 3 REJECTED
   ...rejectedBills(),
   // 3 ARCHIVED
@@ -548,6 +562,74 @@ function paidBills(): BillSpec[] {
   ];
 }
 
+function failedPaymentBills(): BillSpec[] {
+  return [
+    {
+      invoiceNumber: 'INV-2026-0701',
+      vendorIndex: 4,
+      description: 'Datadog — May observability',
+      status: BillStatus.SCHEDULED,
+      amount: '3200.00',
+      lineItems: [{ description: 'Pro plan + APM', quantity: '1', unitPrice: '3200.00' }],
+      invoiceDaysAgo: 14,
+      dueDaysAhead: 1,
+      paymentMethod: PaymentMethod.ACH,
+      scheduledDaysAhead: -2,
+      paymentEndState: 'FAILED',
+      failedDaysAgo: 1,
+      failureReason: 'Insufficient funds on the receiving account.',
+    },
+    {
+      invoiceNumber: 'INV-2026-0702',
+      vendorIndex: 6,
+      description: 'Twilio — April messaging',
+      status: BillStatus.SCHEDULED,
+      amount: '845.30',
+      lineItems: [{ description: 'SMS + voice minutes', quantity: '1', unitPrice: '845.30' }],
+      invoiceDaysAgo: 12,
+      dueDaysAhead: 3,
+      paymentMethod: PaymentMethod.WIRE,
+      scheduledDaysAhead: -3,
+      paymentEndState: 'FAILED',
+      failedDaysAgo: 2,
+      failureReason: 'Wire rejected by intermediary bank (invalid SWIFT code).',
+    },
+  ];
+}
+
+function canceledPaymentBills(): BillSpec[] {
+  return [
+    {
+      invoiceNumber: 'INV-2026-0801',
+      vendorIndex: 5,
+      description: 'Linear — March licenses',
+      status: BillStatus.APPROVED,
+      amount: '1680.00',
+      lineItems: [{ description: 'Linear seats × 56', quantity: '56', unitPrice: '30.00' }],
+      invoiceDaysAgo: 10,
+      dueDaysAhead: 5,
+      paymentMethod: PaymentMethod.ACH,
+      scheduledDaysAhead: 7,
+      paymentEndState: 'CANCELED',
+      canceledDaysAgo: 1,
+    },
+    {
+      invoiceNumber: 'INV-2026-0802',
+      vendorIndex: 7,
+      description: 'Sentry — quarterly',
+      status: BillStatus.APPROVED,
+      amount: '2160.00',
+      lineItems: [{ description: 'Team plan × 1 quarter', quantity: '1', unitPrice: '2160.00' }],
+      invoiceDaysAgo: 9,
+      dueDaysAhead: 6,
+      paymentMethod: PaymentMethod.CARD,
+      scheduledDaysAhead: 8,
+      paymentEndState: 'CANCELED',
+      canceledDaysAgo: 2,
+    },
+  ];
+}
+
 function rejectedBills(): BillSpec[] {
   return [
     {
@@ -812,6 +894,57 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
     },
   });
 
+  // CANCELED end-state: bill stays APPROVED but the payment walked
+  // through SCHEDULED -> CANCELED. We have to seed the schedule +
+  // cancel events explicitly because the standard SCHEDULED-or-PAID
+  // branch below would leave the bill at SCHEDULED.
+  if (spec.paymentEndState === 'CANCELED' && spec.canceledDaysAgo !== undefined) {
+    const scheduledAt = approvedAt;
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: PaymentStatus.SCHEDULED,
+        scheduledFor:
+          spec.scheduledDaysAhead !== undefined ? daysAhead(spec.scheduledDaysAhead) : null,
+      },
+    });
+    await logPaymentTransition(
+      payment.id,
+      'payment.scheduled',
+      PaymentStatus.UNSCHEDULED,
+      PaymentStatus.SCHEDULED,
+      scheduledAt,
+    );
+    await logBillTransition(
+      bill.id,
+      'bill.scheduled',
+      BillStatus.APPROVED,
+      BillStatus.SCHEDULED,
+      scheduledAt,
+    );
+
+    const canceledAt = daysAgo(spec.canceledDaysAgo);
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: PaymentStatus.CANCELED, canceledAt, scheduledFor: null },
+    });
+    await logPaymentTransition(
+      payment.id,
+      'payment.canceled',
+      PaymentStatus.SCHEDULED,
+      PaymentStatus.CANCELED,
+      canceledAt,
+    );
+    await logBillTransition(
+      bill.id,
+      'bill.payment_canceled',
+      BillStatus.SCHEDULED,
+      BillStatus.APPROVED,
+      canceledAt,
+    );
+    return;
+  }
+
   if (spec.status === BillStatus.APPROVED) {
     return;
   }
@@ -843,6 +976,46 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       BillStatus.SCHEDULED,
       scheduledAt,
     );
+  }
+
+  // FAILED end-state: walk SCHEDULED -> INITIATED -> FAILED. The bill
+  // stays SCHEDULED — there is no markAsFailed endpoint that would
+  // move the bill back, so the seed mirrors that invariant.
+  if (
+    spec.paymentEndState === 'FAILED' &&
+    spec.failedDaysAgo !== undefined &&
+    spec.failureReason !== undefined
+  ) {
+    const initiatedAt = daysAgo(spec.failedDaysAgo + 1);
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: PaymentStatus.INITIATED, initiatedAt },
+    });
+    await logPaymentTransition(
+      payment.id,
+      'payment.released',
+      PaymentStatus.SCHEDULED,
+      PaymentStatus.INITIATED,
+      initiatedAt,
+    );
+
+    const failedAt = daysAgo(spec.failedDaysAgo);
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: PaymentStatus.FAILED,
+        failedAt,
+        failureReason: spec.failureReason,
+      },
+    });
+    await logPaymentTransition(
+      payment.id,
+      'payment.failed',
+      PaymentStatus.INITIATED,
+      PaymentStatus.FAILED,
+      failedAt,
+    );
+    return;
   }
 
   if (spec.status === BillStatus.PAID && spec.initiatedDaysAgo !== undefined) {
