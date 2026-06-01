@@ -98,6 +98,32 @@ export class BillsService {
     return toBillResponse(bill);
   }
 
+  // Returns the full filtered+sorted set with the vendor included, no
+  // pagination. Used by the CSV export endpoint where the contract is
+  // explicitly "all rows that match the active filters". Validation
+  // (where + sort) reuses the same parsers as `list`, so the export
+  // and the table cannot drift on what `status=APPROVED,SCHEDULED`
+  // means. Vendor is included once (not joined N times in the mapper)
+  // for the `vendor` column on the CSV row.
+  async findAllForExport(query: BillListQueryDto): Promise<
+    Array<
+      BillWithRelations & {
+        vendor: { name: string };
+      }
+    >
+  > {
+    const where = this.buildWhere(query);
+    const orderBy = this.parseSort(query.sort);
+    return this.prisma.bill.findMany({
+      where,
+      orderBy,
+      include: {
+        ...billInclude,
+        vendor: { select: { name: true } },
+      },
+    });
+  }
+
   // ---- create -------------------------------------------------------
 
   async create(dto: CreateBillDto, actor: AuthUser): Promise<BillResponseDto> {

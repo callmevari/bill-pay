@@ -5,6 +5,7 @@ import { ActivityModule } from './activity/activity.module';
 import { AuthModule } from './auth/auth.module';
 import { BillsModule } from './bills/bills.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { ExportsModule } from './exports/exports.module';
 import { HealthModule } from './health/health.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -19,6 +20,7 @@ import { VendorsModule } from './vendors/vendors.module';
     ActivityModule,
     BillsModule,
     PaymentsModule,
+    ExportsModule,
   ],
   providers: [
     {
