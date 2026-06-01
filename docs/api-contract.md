@@ -344,7 +344,7 @@ Body: `{ ids: string[] }`. Each item runs `POST /bills/:id/archive`. `PAID` and 
 
 #### `POST /bills/bulk/edit` — Admin only
 
-Body: `{ ids: string[], fields: { dueDate?: ISO-8601, memo?: string | null } }`. `fields` must contain at least one of `dueDate` / `memo`; an empty object → `400 VALIDATION_ERROR`. `memo` maps to `Bill.description` (we surface the spec wording on the wire). `paymentMethod` is intentionally not bulk-editable — it lives on the linked `Payment`, not on the Bill. Terminal bills (`PAID`, `REJECTED`, `ARCHIVED`) fail per-item with `BILL_NOT_EDITABLE`.
+Body: `{ ids: string[], fields: { dueDate?: ISO-8601, description?: string | null } }`. `fields` must contain at least one of `dueDate` / `description`; an empty object → `400 VALIDATION_ERROR`. `paymentMethod` is intentionally not bulk-editable — it lives on the linked `Payment`, not on the Bill. Terminal bills (`PAID`, `REJECTED`, `ARCHIVED`) fail per-item with `BILL_NOT_EDITABLE`.
 
 ### Payments
 
@@ -415,6 +415,6 @@ Response headers:
 - `Content-Type: text/csv; charset=utf-8`
 - `Content-Disposition: attachment; filename="bills-YYYY-MM-DD.csv"` (date is server-side UTC)
 
-Columns, in order: `id, vendor, status, amount, dueDate, paymentMethod, invoiceNumber, memo, paymentStatus, paymentScheduledFor, paymentPaidAt, createdAt`. Money is the same `"1234.56"` decimal string the JSON API uses; dates are ISO-8601. Payment columns are empty cells when the bill has no payment yet. Quoting follows RFC 4180 (`csv-stringify`): values containing `,`, `"`, `\r`, or `\n` are wrapped in `"…"` and embedded `"` is doubled to `""`.
+Columns, in order: `id, vendor, status, amount, dueDate, paymentMethod, invoiceNumber, description, paymentStatus, paymentScheduledFor, paymentPaidAt, createdAt`. Money is the same `"1234.56"` decimal string the JSON API uses; dates are ISO-8601. Payment columns are empty cells when the bill has no payment yet. Quoting follows RFC 4180 (`csv-stringify`): values containing `,`, `"`, `\r`, or `\n` are wrapped in `"…"` and embedded `"` is doubled to `""`. Cells whose first character is `=`, `+`, `-`, `@`, `\t`, or `\r` are prefixed with a single quote so spreadsheets do not evaluate user-controlled strings as formulas.
 
 Errors return JSON via the global exception filter, not CSV — an unknown `sort` field returns `400 VALIDATION_ERROR` with the regular `{ error: { code, message } }` envelope.

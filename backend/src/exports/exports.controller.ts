@@ -29,7 +29,7 @@ export class ExportsController {
   })
   @ApiOkResponse({
     description:
-      'CSV body. Columns: id, vendor, status, amount, dueDate, paymentMethod, invoiceNumber, memo, paymentStatus, paymentScheduledFor, paymentPaidAt, createdAt.',
+      'CSV body. Columns: id, vendor, status, amount, dueDate, paymentMethod, invoiceNumber, description, paymentStatus, paymentScheduledFor, paymentPaidAt, createdAt.',
   })
   async billsCsv(
     @Query() query: BillListQueryDto,

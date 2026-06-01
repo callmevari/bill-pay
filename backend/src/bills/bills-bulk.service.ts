@@ -28,20 +28,16 @@ export class BillsBulkService {
   }
 
   edit(dto: BulkEditBillsDto, actor: AuthUser): Promise<BulkBillsResponseDto> {
-    // Translate the bulk wire shape into the single-item DTO once,
-    // outside the per-item loop. `memo` lives on the wire because the
-    // implementation plan uses that language; internally it maps to
-    // `Bill.description`. Only fields whose values are not `undefined`
-    // are forwarded — class-transformer materializes optional class
-    // properties as own keys set to `undefined`, so a naive
-    // `hasOwnProperty` check would treat an empty `{}` as having
-    // present-but-undefined fields. Send `memo: null` to clear the
-    // description; omit the key to leave it alone. An empty `fields`
-    // payload (no value-bearing keys) is rejected with 400 so the
-    // per-item loop never sees a no-op.
+    // Forward only the value-bearing keys. class-transformer materializes
+    // optional class properties as own keys set to `undefined`, so a
+    // naive `hasOwnProperty` check would treat an empty `{}` as having
+    // present-but-undefined fields. Send `description: null` to clear
+    // the description; omit the key to leave it alone. An empty
+    // `fields` payload (no value-bearing keys) is rejected with 400 so
+    // the per-item loop never sees a no-op.
     const translated: { description?: string | null; dueDate?: string } = {};
-    if (dto.fields.memo !== undefined) {
-      translated.description = dto.fields.memo;
+    if (dto.fields.description !== undefined) {
+      translated.description = dto.fields.description;
     }
     if (dto.fields.dueDate !== undefined) {
       translated.dueDate = dto.fields.dueDate;
@@ -49,7 +45,7 @@ export class BillsBulkService {
     if (Object.keys(translated).length === 0) {
       throw new BadRequestException({
         code: ErrorCode.VALIDATION_ERROR,
-        message: 'fields must contain at least one of: dueDate, memo.',
+        message: 'fields must contain at least one of: dueDate, description.',
       });
     }
     return runBulk<BillResponseDto>(dto.ids, (id) =>

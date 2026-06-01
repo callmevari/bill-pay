@@ -15,15 +15,15 @@ body:json {
     "ids": ["{{billId}}"],
     "fields": {
       "dueDate": "2026-09-30T00:00:00.000Z",
-      "memo": "Updated in bulk"
+      "description": "Updated in bulk"
     }
   }
 }
 
 docs {
   Admin only. Applies the same field updates to every non-terminal
-  bill in `ids`. Allowed fields: `dueDate`, `memo` (maps to
-  `description`). At least one must be present; an empty `fields`
-  object is rejected with 400. Terminal bills (PAID/REJECTED/ARCHIVED)
-  fail per item with BILL_NOT_EDITABLE.
+  bill in `ids`. Allowed fields: `dueDate`, `description`. At least
+  one must be present; an empty `fields` object is rejected with 400.
+  Terminal bills (PAID/REJECTED/ARCHIVED) fail per item with
+  BILL_NOT_EDITABLE.
 }

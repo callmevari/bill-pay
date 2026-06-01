@@ -102,8 +102,8 @@ describe('Exports (e2e)', () => {
 
     const body = res.text;
     // Parse the CSV so the line count is record-accurate (an embedded
-    // newline inside a quoted memo would otherwise be miscounted as an
-    // extra row by a naive split).
+    // newline inside a quoted description would otherwise be miscounted
+    // as an extra row by a naive split).
     const parsed = parse(body, { columns: true });
     // Only the APPROVED bill is in the body (filter respected).
     expect(parsed).toHaveLength(1);
@@ -115,7 +115,7 @@ describe('Exports (e2e)', () => {
       dueDate: '2026-05-31T00:00:00.000Z',
       paymentMethod: 'ACH',
       invoiceNumber: 'INV-EXP-A',
-      memo: 'has "quotes", commas, and\nnewline',
+      description: 'has "quotes", commas, and\nnewline',
       paymentStatus: 'SCHEDULED',
       paymentScheduledFor: '2026-06-10T00:00:00.000Z',
       paymentPaidAt: '',

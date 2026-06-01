@@ -81,7 +81,7 @@ describe('ExportsService', () => {
     const csv = await service.billsCsv({ page: 1, pageSize: 25 });
     const header = csv.split('\n')[0];
     expect(header).toBe(
-      'id,vendor,status,amount,dueDate,paymentMethod,invoiceNumber,memo,paymentStatus,paymentScheduledFor,paymentPaidAt,createdAt',
+      'id,vendor,status,amount,dueDate,paymentMethod,invoiceNumber,description,paymentStatus,paymentScheduledFor,paymentPaidAt,createdAt',
     );
   });
 
@@ -119,7 +119,7 @@ describe('ExportsService', () => {
         amount: '50.00',
         dueDate: new Date('2026-06-01T00:00:00.000Z'),
         invoiceNumber: 'INV-002',
-        description: 'Multi\nline\nmemo',
+        description: 'Multi\nline\ndescription',
         payment: {
           method: PaymentMethod.ACH,
           status: PaymentStatus.SCHEDULED,
@@ -133,7 +133,7 @@ describe('ExportsService', () => {
     // Embedded quote must be doubled per RFC 4180.
     expect(csv).toContain('"Acme ""Quoted, Inc."""');
     // Newline-containing field must be wrapped in quotes.
-    expect(csv).toContain('"Multi\nline\nmemo"');
+    expect(csv).toContain('"Multi\nline\ndescription"');
     // Payment status renders unwrapped (no special chars).
     expect(csv).toContain('SCHEDULED');
     expect(csv).toContain('ACH');

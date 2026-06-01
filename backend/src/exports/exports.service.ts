@@ -16,7 +16,7 @@ const BILLS_CSV_COLUMNS = [
   'dueDate',
   'paymentMethod',
   'invoiceNumber',
-  'memo',
+  'description',
   'paymentStatus',
   'paymentScheduledFor',
   'paymentPaidAt',
@@ -56,7 +56,7 @@ export class ExportsService {
       dueDate: row.dueDate.toISOString(),
       paymentMethod: row.payment?.method ?? '',
       invoiceNumber: sanitizeCsvCell(row.invoiceNumber),
-      memo: sanitizeCsvCell(row.description ?? ''),
+      description: sanitizeCsvCell(row.description ?? ''),
       paymentStatus: row.payment?.status ?? '',
       paymentScheduledFor: row.payment?.scheduledFor
         ? row.payment.scheduledFor.toISOString()

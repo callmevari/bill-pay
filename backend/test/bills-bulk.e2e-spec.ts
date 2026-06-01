@@ -210,7 +210,7 @@ describe('Bills bulk (e2e)', () => {
 
   // ---- edit -------------------------------------------------------
 
-  it('POST /bills/bulk/edit applies dueDate and memo to every editable bill, leaves the terminal bill untouched, and writes one bill.updated activity row per success', async () => {
+  it('POST /bills/bulk/edit applies dueDate and description to every editable bill, leaves the terminal bill untouched, and writes one bill.updated activity row per success', async () => {
     const draftBill = await insertBill(BillStatus.DRAFT, 'INV-BULK-E1');
     const approvedBill = await insertBill(BillStatus.APPROVED, 'INV-BULK-E2');
     const paidBill = await insertBill(BillStatus.PAID, 'INV-BULK-E3');
@@ -222,7 +222,7 @@ describe('Bills bulk (e2e)', () => {
         ids: [draftBill.id, approvedBill.id, paidBill.id],
         fields: {
           dueDate: '2026-08-15T00:00:00.000Z',
-          memo: 'Updated in bulk',
+          description: 'Updated in bulk',
         },
       });
 
@@ -280,7 +280,7 @@ describe('Bills bulk (e2e)', () => {
       .set('x-user-id', actors.approver.id)
       .send({
         ids: ['anything'],
-        fields: { memo: 'no' },
+        fields: { description: 'no' },
       });
     expect(res.status).toBe(403);
   });

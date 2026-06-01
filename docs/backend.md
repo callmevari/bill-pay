@@ -187,7 +187,7 @@ The per-item loop lives in a small **`runBulk` helper** (`src/common/bulk/bulk-r
 - Catches per-item exceptions and translates them through `toBulkItemError` into the same `{ code, message, details? }` envelope the single-item endpoint would have returned via the global filter. Bulk endpoints return `200` with that envelope nested in `results[].error`, so partial failures never collapse the HTTP status.
 - Builds the `summary` (`{ total, succeeded, failed }`) once at the end. The frontend can render "3 of 5 succeeded" without recomputing.
 
-The decision **not** to support `paymentMethod` in `POST /bills/bulk/edit` is documented in the DTO and the API contract: payment method lives on the linked `Payment`, not on the `Bill`, so editing it through the bills bulk surface would cross the bill ↔ payment boundary and require a parallel service method with its own guard. That's a real product need but outside the "reuse the single-item service methods" charter of Phase 7. Bills bulk-edit is limited to `dueDate` and `memo` (`memo` is the wire alias for `Bill.description`, matching the spec's wording).
+The decision **not** to support `paymentMethod` in `POST /bills/bulk/edit` is documented in the DTO and the API contract: payment method lives on the linked `Payment`, not on the `Bill`, so editing it through the bills bulk surface would cross the bill ↔ payment boundary and require a parallel service method with its own guard. That's a real product need but outside the "reuse the single-item service methods" charter of Phase 7. Bills bulk-edit is limited to `dueDate` and `description` — the same wire names the single-item `PATCH /bills/:id` already uses.
 
 ### Activity reads
 

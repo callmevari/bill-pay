@@ -58,7 +58,7 @@ export class BillsBulkController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Apply the same field updates to a batch of editable bills (Admin only). Fields: dueDate, memo.',
+      'Apply the same field updates to a batch of editable bills (Admin only). Fields: dueDate, description.',
   })
   @ApiOkResponse({ type: BulkBillsResponseDto })
   edit(

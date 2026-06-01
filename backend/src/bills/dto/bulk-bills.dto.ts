@@ -39,12 +39,7 @@ export class BulkBillIdsDto {
 // Subset of bill fields that make sense to bulk-edit. Maps to the
 // existing single-item `PATCH /bills/:id` surface so the same
 // `BillsService.update` flow (including the BILL_NOT_EDITABLE guard and
-// the per-bill activity-log row) is reused for every item:
-//
-//   `memo` → `Bill.description` (we expose `memo` in the wire shape
-//   because that's the spec language used in the implementation plan;
-//   internally it's stored as `description` — same column, different
-//   external name).
+// the per-bill activity-log row) is reused for every item.
 //
 // `paymentMethod` is intentionally NOT bulk-editable in this MVP:
 // payment method lives on the linked `Payment` row, not on the Bill.
@@ -63,7 +58,7 @@ export class BulkEditBillFieldsDto {
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
-  memo?: string | null;
+  description?: string | null;
 }
 
 export class BulkEditBillsDto extends BulkBillIdsDto {
