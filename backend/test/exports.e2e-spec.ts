@@ -91,13 +91,11 @@ describe('Exports (e2e)', () => {
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/^text\/csv;\s*charset=utf-8/);
 
-    // Filename uses today's UTC date.
-    const now = new Date();
-    const yyyy = now.getUTCFullYear();
-    const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(now.getUTCDate()).padStart(2, '0');
-    expect(res.headers['content-disposition']).toBe(
-      `attachment; filename="bills-${yyyy}-${mm}-${dd}.csv"`,
+    // Filename uses today's UTC date. Asserted by regex so a run that
+    // straddles UTC midnight between the request and re-deriving the
+    // expected date here does not flake.
+    expect(res.headers['content-disposition']).toMatch(
+      /^attachment; filename="bills-\d{4}-\d{2}-\d{2}\.csv"$/,
     );
 
     const body = res.text;

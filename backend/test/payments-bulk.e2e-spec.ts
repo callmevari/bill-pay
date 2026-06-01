@@ -37,7 +37,7 @@ describe('Payments bulk (e2e)', () => {
     billStatus: BillStatus;
     paymentStatus: PaymentStatus;
     invoiceNumber: string;
-    scheduledFor?: Date;
+    scheduledFor?: Date | null;
   }) => {
     const bill = await prisma.bill.create({
       data: {
@@ -58,8 +58,14 @@ describe('Payments bulk (e2e)', () => {
         method: PaymentMethod.ACH,
         amount: bill.amount,
         currency: bill.currency,
+        // UNSCHEDULED payments invariant: scheduledFor must be null.
+        // Only SCHEDULED/INITIATED/PAID/FAILED carry a real date.
         scheduledFor:
-          overrides.scheduledFor ?? new Date('2026-06-01T00:00:00.000Z'),
+          overrides.scheduledFor !== undefined
+            ? overrides.scheduledFor
+            : overrides.paymentStatus === PaymentStatus.UNSCHEDULED
+              ? null
+              : new Date('2026-06-01T00:00:00.000Z'),
       },
     });
     return { bill, payment };
@@ -87,7 +93,7 @@ describe('Payments bulk (e2e)', () => {
     expect(res.status).toBe(200);
     const body = res.body as {
       results: { id: string; ok: boolean; data?: { status: string } }[];
-      summary: { succeeded: number; failed: number };
+      summary: { total: number; succeeded: number; failed: number };
     };
     expect(body.summary).toEqual({ total: 2, succeeded: 2, failed: 0 });
     expect(body.results.map((r) => r.data?.status)).toEqual([
@@ -226,7 +232,7 @@ describe('Payments bulk (e2e)', () => {
         ok: boolean;
         error?: { code: string };
       }[];
-      summary: { succeeded: number; failed: number };
+      summary: { total: number; succeeded: number; failed: number };
     };
     expect(body.summary).toEqual({ total: 2, succeeded: 1, failed: 1 });
     expect(body.results[0].ok).toBe(true);

@@ -283,3 +283,47 @@ In backend/Dockerfile:
 +# `dist`, `prisma/`, the production node_modules, and the entrypoint.
 +#
 The Dockerfile comment says the runner stage ships only production node_modules, but the build copies backend/node_modules from an install that includes devDependencies (no --prod/prune step). This increases image size and attack surface; consider pruning to production deps in the runner stage (and, if needed, moving Prisma CLI to dependencies to keep prisma migrate deploy available).
+
+=== RE REVIEW ===
+
+In backend/src/common/bulk/bulk-runner.ts (line 19+):
+
+toBulkItemError currently hard-codes INTERNAL_ERROR for HttpExceptions that don’t carry an explicit { code } (including the typeof response === 'string' path). This diverges from GlobalExceptionFilter which derives the default code from the HTTP status (e.g. 400 → VALIDATION_ERROR), so bulk endpoints won’t match the single-item error envelope as documented.
+
+In backend/src/common/bulk/bulk-runner.spec.ts (line 76+):
+
+This test asserts BadRequestException('...') becomes INTERNAL_ERROR, but the global exception filter maps status 400 to VALIDATION_ERROR when no explicit code is provided. Keeping this expectation will mask the bulk/single-item envelope mismatch.
+
+In backend/src/exports/exports.service.ts (line 39):
+
+CSV export is described (in the PR) as applying formula-injection mitigation for cells starting with =, +, -, or @, but the export currently writes user-controlled strings (e.g. vendor name, invoice number, memo/description) verbatim. This can lead to spreadsheet formula execution when the CSV is opened in Excel/Sheets.
+
+In docs/api-contract.md (line 344+):
+
+The PR description says the bulk-edit body and CSV export were unified to use the description field name, but this contract still documents memo on the bulk-edit wire shape (and calls it a “wire alias”). Either the implementation should accept description (and update DTOs/tests/Bruno/CSV header), or the PR description/contract should be updated to consistently use memo.
+
+In backend/src/bills/dto/bulk-bills.dto.ts (line 63+):
+
+The PR description mentions unifying the external field name to description, but this bulk-edit DTO still exposes memo on the wire. If the intended public API is description, this DTO (and its consumers/tests/docs) should be updated to accept description instead of memo.
+
+In backend/src/exports/exports.service.ts (line 18+):
+
+The PR description says the CSV column header was unified to description, but the export column list still uses memo. If description is the desired external name, the CSV header (and tests/contract) should be updated accordingly.
+
+backend/Dockerfile (line 59+):
+
+Using npx prisma ... in the runtime CMD can fall back to downloading Prisma if the CLI isn’t present in node_modules (or if dependency pruning changes later), which is undesirable/fragile in production containers. Since node_modules is copied into the image, invoking the local binary avoids any network dependency at startup.
+
+=== RE REVIEW 2 ===
+
+In backend/test/payments-bulk.e2e-spec.ts (line 61+):
+
+seedBillWithPayment always sets scheduledFor to a Date when overrides.scheduledFor is undefined, even when paymentStatus is UNSCHEDULED. That makes the seeded payment inconsistent with the status/invariant the rest of the codebase likely relies on (unscheduled payments should have scheduledFor: null), and can mask bugs in endpoints that depend on scheduledFor semantics.
+
+In backend/test/payments-bulk.e2e-spec.ts (line 88+):
+
+The body type annotation for summary is missing the total field even though the assertion expects it. This makes the test typing misleading and can hide real shape mismatches.
+
+In backend/test/exports.e2e-spec.ts (line 94+):
+
+This filename assertion can be flaky if the test happens to run across a UTC date boundary (midnight UTC) between the request and new Date() here. A regex assertion avoids time-boundary flakes while still verifying the header format.
