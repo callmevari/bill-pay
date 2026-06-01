@@ -11,6 +11,9 @@ import {
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 
+import { ActivityService } from '../activity/activity.service';
+import { ActivityQueryDto } from '../activity/dto/activity-query.dto';
+import { PaginatedActivityResponseDto } from '../activity/dto/paginated-activity-response.dto';
 import type { AuthUser } from '../auth/auth-user';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
@@ -23,7 +26,10 @@ import { PaymentsService } from './payments.service';
 @ApiTags('payments')
 @Controller('payments')
 export class PaymentsController {
-  constructor(private readonly payments: PaymentsService) {}
+  constructor(
+    private readonly payments: PaymentsService,
+    private readonly activity: ActivityService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List payments (paginated, filterable, sortable)' })
@@ -130,5 +136,17 @@ export class PaymentsController {
     @CurrentUser() actor: AuthUser,
   ): Promise<PaymentResponseDto> {
     return this.payments.retry(id, actor);
+  }
+
+  @Get(':id/activity')
+  @ApiOperation({
+    summary: 'List the activity log for a payment (newest first).',
+  })
+  @ApiOkResponse({ type: PaginatedActivityResponseDto })
+  listActivity(
+    @Param('id') id: string,
+    @Query() query: ActivityQueryDto,
+  ): Promise<PaginatedActivityResponseDto> {
+    return this.activity.forPayment(id, query);
   }
 }
