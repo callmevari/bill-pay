@@ -42,9 +42,10 @@ export function ConnectionDot(): React.JSX.Element {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span
+        <button
+          type="button"
           aria-label={label}
-          className="flex h-7 items-center justify-center px-1"
+          className="flex h-7 items-center justify-center rounded-md px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <span
             className={cn(
@@ -58,7 +59,7 @@ export function ConnectionDot(): React.JSX.Element {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/60" />
             ) : null}
           </span>
-        </span>
+        </button>
       </TooltipTrigger>
       <TooltipContent>
         <div className="flex flex-col gap-0.5">

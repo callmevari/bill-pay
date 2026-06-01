@@ -84,10 +84,15 @@ function NavLink({ item }: { item: NavItem }): React.JSX.Element {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className={disabled} aria-disabled="true">
+          <button
+            type="button"
+            aria-disabled="true"
+            onClick={(e) => e.preventDefault()}
+            className={disabled}
+          >
             <Icon className="size-4" />
             <span>{item.label}</span>
-          </span>
+          </button>
         </TooltipTrigger>
         <TooltipContent>Coming in a later phase</TooltipContent>
       </Tooltip>

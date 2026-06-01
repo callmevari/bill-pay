@@ -5,7 +5,7 @@ import { CheckCircle2 } from 'lucide-react';
 import { ApiError, apiFetch } from '@/lib/api';
 import { Loading } from '@/components/states/loading';
 import { ErrorState } from '@/components/states/error-state';
-import { useRoleStore } from '@/stores/role-store';
+import { useRoleHydrated, useRoleStore } from '@/stores/role-store';
 
 interface HealthResponse {
   ok: boolean;
@@ -20,7 +20,7 @@ interface VendorsListResponse {
 
 export function HealthCard(): React.JSX.Element {
   const activeUser = useRoleStore((state) => state.activeUser);
-  const hydrated = useRoleStore((state) => state.hydrated);
+  const hydrated = useRoleHydrated();
 
   // Wiring proof: hits `GET /health`, which the backend lets through
   // without an `x-user-id`. Proves the base URL + fetch + JSON envelope.
