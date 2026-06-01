@@ -18,10 +18,7 @@ const dateFormatter = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
 });
 
-const dateTimeFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
+const timeFormatter = new Intl.DateTimeFormat('en-US', {
   hour: '2-digit',
   minute: '2-digit',
   hour12: false,
@@ -53,11 +50,11 @@ export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return '—';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  // The default `Intl` separator is a regular comma; the design uses the
-  // middle-dot convention from Ramp's UI so the date + time read as one
-  // value rather than two parallel columns.
-  const formatted = dateTimeFormatter.format(date);
-  return formatted.replace(', ', ' · ');
+  // Build the date and time halves separately so we can join them with
+  // a middle-dot — Intl's default for en-US is "Jun 1, 2026, 14:30",
+  // which puts two commas in a row and reads as two columns rather
+  // than one timestamp.
+  return `${dateFormatter.format(date)} · ${timeFormatter.format(date)}`;
 }
 
 export function humanizeEnum(value: string): string {
