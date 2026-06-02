@@ -22,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { BillStatusBadge } from './bill-status-badge';
 import { PaymentStatusBadge } from './payment-status-badge';
+import { PaymentRowMenu } from './payment-row-menu';
 import { ColumnVisibility } from './column-visibility';
 import { Loading } from '@/components/states/loading';
 import { Empty } from '@/components/states/empty';
@@ -72,6 +73,9 @@ interface BillsTableProps {
   onSortChange: (sort: string) => void;
   pageSize: number;
   storageKey: string;
+  // Trailing actions column for the For Payment / History tabs only; off
+  // by default so the Drafts and For Approval tabs stay compact.
+  showPaymentActions?: boolean;
 }
 
 function parseSort(sort: string): SortingState {
@@ -100,6 +104,7 @@ export function BillsTable({
   onSortChange,
   pageSize,
   storageKey,
+  showPaymentActions = false,
 }: BillsTableProps): React.JSX.Element {
   const router = useRouter();
 
@@ -118,8 +123,8 @@ export function BillsTable({
     }
   }, [visibility, storageKey]);
 
-  const columns = useMemo<ColumnDef<Bill>[]>(
-    () => [
+  const columns = useMemo<ColumnDef<Bill>[]>(() => {
+    const base: ColumnDef<Bill>[] = [
       {
         id: 'invoiceNumber',
         accessorKey: 'invoiceNumber',
@@ -178,9 +183,31 @@ export function BillsTable({
         enableSorting: false,
         meta: { label: 'Payment' },
       },
-    ],
-    [vendorById],
-  );
+    ];
+    if (showPaymentActions) {
+      base.push({
+        id: 'actions',
+        header: () => <span className="sr-only">Actions</span>,
+        cell: ({ row }) => {
+          const payment = row.original.payment;
+          if (!payment) return null;
+          // `PaymentRowMenu` already stops propagation on its trigger
+          // and content (so clicks on the actual dropdown surface don't
+          // open the detail page). Clicks on the surrounding cell
+          // padding intentionally fall through to the row handler and
+          // open the detail — same as clicking any other cell.
+          return (
+            <div className="flex justify-end">
+              <PaymentRowMenu payment={payment} />
+            </div>
+          );
+        },
+        enableSorting: false,
+        meta: { label: 'Actions' },
+      });
+    }
+    return base;
+  }, [vendorById, showPaymentActions]);
 
   const sorting = parseSort(sort);
 
