@@ -69,6 +69,7 @@ export interface BillApproval {
   id: string;
   billId: string;
   approverId: string;
+  approverName: string;
   status: ApprovalStatus;
   notes: string | null;
   createdAt: string;

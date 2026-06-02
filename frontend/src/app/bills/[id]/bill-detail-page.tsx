@@ -20,6 +20,7 @@ import { BillStatusBadge } from '@/components/bills/bill-status-badge';
 import { PaymentStatusBadge } from '@/components/bills/payment-status-badge';
 import { PaymentMethodBadge } from '@/components/bills/payment-method-badge';
 import { ActivityTimeline } from '@/components/activity/activity-timeline';
+import { CopyIdButton } from '@/components/ui/copy-id-button';
 import { useBillQuery } from '@/hooks/use-bill-query';
 import { useBillActivityQuery } from '@/hooks/use-bill-activity-query';
 import { useAllVendorsQuery } from '@/hooks/use-vendors-query';
@@ -272,7 +273,12 @@ function ApprovalsBlock({ approvals }: { approvals: BillApproval[] }): React.JSX
               <TableCell>
                 <Badge variant={approvalVariant(approval.status)}>{humanizeEnum(approval.status)}</Badge>
               </TableCell>
-              <TableCell className="font-mono text-xs">{approval.approverId}</TableCell>
+              <TableCell>
+                <span className="inline-flex items-center gap-1.5 text-sm">
+                  {approval.approverName}
+                  <CopyIdButton value={approval.approverId} label="approver id" />
+                </span>
+              </TableCell>
               <TableCell className="text-sm text-muted-foreground">
                 {approval.notes ?? '—'}
               </TableCell>

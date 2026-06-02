@@ -36,7 +36,7 @@ function ActivityRow({ entry, isLast }: ActivityRowProps): React.JSX.Element {
   // — new activity verbs land regularly and the timeline must stay
   // resilient to them.
   const Icon = ENTITY_ICONS[entry.entityType] ?? Circle;
-  const verb = humanizeAction(entry.action);
+  const verb = humanizeAction(entry);
 
   return (
     <li className="flex gap-3 pb-4">
@@ -58,9 +58,9 @@ function ActivityRow({ entry, isLast }: ActivityRowProps): React.JSX.Element {
           <span className="text-muted-foreground">{verb}</span>
           {entry.fromStatus && entry.toStatus ? (
             <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground">
-              {humanizeEnum(entry.fromStatus)}
+              ({humanizeEnum(entry.fromStatus)}
               <ArrowRight className="size-3" />
-              {humanizeEnum(entry.toStatus)}
+              {humanizeEnum(entry.toStatus)})
             </span>
           ) : null}
         </div>
@@ -70,14 +70,14 @@ function ActivityRow({ entry, isLast }: ActivityRowProps): React.JSX.Element {
   );
 }
 
-function humanizeAction(action: string): string {
-  // `bill.line_item_added` → "added a line item". The verb is the last
-  // dotted segment; the preceding namespace tells us what the subject is
-  // and isn't useful in the verb itself.
-  const parts = action.split('.');
-  const last = parts[parts.length - 1] ?? action;
-  return last
-    .split('_')
-    .join(' ')
-    .replace(/^./, (c) => c.toLowerCase());
+function humanizeAction(entry: ActivityLogEntry): string {
+  // Prepend the entity name so "Bill created" and "Payment created" are
+  // visually distinct beyond just the icon. The verb is the last dotted
+  // segment of `action`; the namespace usually restates the entity, so we
+  // drop it in favour of `entityType` which is always present.
+  const parts = entry.action.split('.');
+  const verb = (parts[parts.length - 1] ?? entry.action).split('_').join(' ');
+  const entity =
+    entry.entityType.charAt(0) + entry.entityType.slice(1).toLowerCase();
+  return `${entity} ${verb}`;
 }
