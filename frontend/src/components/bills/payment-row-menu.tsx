@@ -241,8 +241,15 @@ function ActionItem({ action, status, onSelect }: ActionItemProps): React.JSX.El
     <DropdownMenuItem
       disabled={!available}
       onSelect={(event) => {
-        event.preventDefault();
-        if (available) onSelect();
+        // Only block the default close behaviour when the item is
+        // disabled — for enabled items we want Radix to dismiss the
+        // menu so the confirmation dialog isn't rendered behind a
+        // still-open dropdown.
+        if (!available) {
+          event.preventDefault();
+          return;
+        }
+        onSelect();
       }}
       title={available ? undefined : paymentActionDisabledReason(action, status)}
     >

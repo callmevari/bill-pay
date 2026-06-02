@@ -60,19 +60,20 @@ Every server-state query key is namespaced and includes the active user id where
 | Hook | Key |
 |---|---|
 | `useBillsQuery` | `['bills', activeUserId, params]` |
-| `useBillQuery` | `['bill', billId, activeUserId]` |
-| `useBillActivityQuery` | `['bill-activity', billId, activeUserId, pageSize]` |
+| `useBillQuery` | `['bill', activeUserId, billId]` |
+| `useBillActivityQuery` | `['bill-activity', activeUserId, billId, pageSize]` |
 | `useVendorsQuery` | `['vendors', activeUserId, params]` |
 | `useAllVendorsQuery` | `['vendors-all', activeUserId]` |
-| `usePaymentQuery` | `['payment', paymentId, activeUserId]` |
 
-Mutations invalidate by **prefix** (`['bills']`, `['bill-activity']`) rather than exact key match, so every mounted variant of the list / activity surface refetches without us having to enumerate filter / pageSize combinations. The Phase 9 reviewer pass caught a stale-invalidation bug here (`['bill-activity', undefined, billId]` never matched the real keys); the pattern below is the correction.
+`activeUserId` always sits **immediately after the namespace** so a single `invalidateQueries({ queryKey: [namespace] })` call refetches every mounted variant for every role.
+
+Mutations invalidate by **top-level namespace prefix only** (`['bill']`, `['bills']`, `['bill-activity']`, `['payments']`, etc.) rather than trying to match the rest of the key shape. Any `[namespace, ...specifics]` prefix that includes the wrong segment order — e.g. `['bill', billId]` when the real key is `['bill', activeUserId, billId]` — silently matches nothing and leaves the UI stale; we hit this twice (Phase 9 on bill-activity, Phase 10 on line item add) before adopting the namespace-only rule.
 
 Cascading rules:
 
-- Any bill mutation invalidates `['bills']` + `['bill', billId]` + `['bill-activity', billId]`.
-- Any payment mutation also invalidates the parent bill query, because the bill row carries the payment snapshot inline.
-- Line item mutations invalidate the parent bill and its activity feed.
+- Any bill mutation invalidates `['bill']` + `['bills']` + `['bill-activity']`.
+- Any payment mutation also invalidates `['bill']` + `['bills']` because the bill row carries the payment snapshot inline.
+- Line item mutations invalidate the parent bill namespace (`['bill']`) and the activity namespace (`['bill-activity']`).
 
 ---
 

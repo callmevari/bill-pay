@@ -191,14 +191,13 @@ export function BillsTable({
         cell: ({ row }) => {
           const payment = row.original.payment;
           if (!payment) return null;
-          // Stop click propagation so the row's "open detail" handler
-          // does not fire when the user is targeting the row dropdown.
+          // `PaymentRowMenu` already stops propagation on its trigger
+          // and content (so clicks on the actual dropdown surface don't
+          // open the detail page). Clicks on the surrounding cell
+          // padding intentionally fall through to the row handler and
+          // open the detail — same as clicking any other cell.
           return (
-            <div
-              onClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) => event.stopPropagation()}
-              className="flex justify-end"
-            >
+            <div className="flex justify-end">
               <PaymentRowMenu payment={payment} />
             </div>
           );
