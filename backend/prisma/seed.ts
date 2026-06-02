@@ -27,6 +27,15 @@ function daysAhead(days: number): Date {
   return daysAgo(-days);
 }
 
+// Seed inserts activity log rows directly via Prisma, bypassing the
+// service helpers that set `createdAt: new Date()` per row in prod.
+// Without explicit offsets the rows tie at the millisecond and the UI
+// timeline can't preserve lifecycle order. A few minutes between rows
+// in the same logical day mirrors how a real transaction would look.
+function plusMinutes(date: Date, minutes: number): Date {
+  return new Date(date.getTime() + minutes * 60_000);
+}
+
 function dec(value: string | number): Prisma.Decimal {
   return new Prisma.Decimal(value);
 }
@@ -871,6 +880,7 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
   }
 
   const paymentMethod = spec.paymentMethod ?? PaymentMethod.ACH;
+  const paymentCreatedAt = plusMinutes(approvedAt, 1);
   const payment = await prisma.payment.create({
     data: {
       billId: bill.id,
@@ -878,7 +888,7 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       method: paymentMethod,
       amount: dec(spec.amount),
       currency: 'USD',
-      createdAt: approvedAt,
+      createdAt: paymentCreatedAt,
     },
   });
 
@@ -890,7 +900,7 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       actorRole: Role.ADMIN,
       action: 'payment.created',
       toStatus: PaymentStatus.UNSCHEDULED,
-      createdAt: approvedAt,
+      createdAt: paymentCreatedAt,
     },
   });
 
@@ -899,7 +909,8 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
   // cancel events explicitly because the standard SCHEDULED-or-PAID
   // branch below would leave the bill at SCHEDULED.
   if (spec.paymentEndState === 'CANCELED' && spec.canceledDaysAgo !== undefined) {
-    const scheduledAt = approvedAt;
+    const paymentScheduledAt = plusMinutes(approvedAt, 2);
+    const billScheduledAt = plusMinutes(approvedAt, 3);
     await prisma.payment.update({
       where: { id: payment.id },
       data: {
@@ -913,14 +924,14 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       'payment.scheduled',
       PaymentStatus.UNSCHEDULED,
       PaymentStatus.SCHEDULED,
-      scheduledAt,
+      paymentScheduledAt,
     );
     await logBillTransition(
       bill.id,
       'bill.scheduled',
       BillStatus.APPROVED,
       BillStatus.SCHEDULED,
-      scheduledAt,
+      billScheduledAt,
     );
 
     const canceledAt = daysAgo(spec.canceledDaysAgo);
@@ -940,7 +951,7 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       'bill.payment_canceled',
       BillStatus.SCHEDULED,
       BillStatus.APPROVED,
-      canceledAt,
+      plusMinutes(canceledAt, 1),
     );
     return;
   }
@@ -953,7 +964,8 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
     spec.status === BillStatus.SCHEDULED ||
     spec.status === BillStatus.PAID
   ) {
-    const scheduledAt = approvedAt;
+    const paymentScheduledAt = plusMinutes(approvedAt, 2);
+    const billScheduledAt = plusMinutes(approvedAt, 3);
     await prisma.payment.update({
       where: { id: payment.id },
       data: {
@@ -967,14 +979,14 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       'payment.scheduled',
       PaymentStatus.UNSCHEDULED,
       PaymentStatus.SCHEDULED,
-      scheduledAt,
+      paymentScheduledAt,
     );
     await logBillTransition(
       bill.id,
       'bill.scheduled',
       BillStatus.APPROVED,
       BillStatus.SCHEDULED,
-      scheduledAt,
+      billScheduledAt,
     );
   }
 
@@ -1051,7 +1063,7 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       'bill.paid',
       BillStatus.SCHEDULED,
       BillStatus.PAID,
-      paidAt,
+      plusMinutes(paidAt, 1),
     );
   }
 }
