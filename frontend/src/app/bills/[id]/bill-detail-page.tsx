@@ -19,6 +19,7 @@ import { Forbidden } from '@/components/states/forbidden';
 import { BillStatusBadge } from '@/components/bills/bill-status-badge';
 import { PaymentStatusBadge } from '@/components/bills/payment-status-badge';
 import { PaymentMethodBadge } from '@/components/bills/payment-method-badge';
+import { BillActions } from '@/components/bills/bill-actions';
 import { ActivityTimeline } from '@/components/activity/activity-timeline';
 import { CopyIdButton } from '@/components/ui/copy-id-button';
 import { useBillQuery } from '@/hooks/use-bill-query';
@@ -88,6 +89,8 @@ export function BillDetailPage({ billId }: BillDetailPageProps): React.JSX.Eleme
       <BackLink />
 
       <BillHeader bill={bill} vendorName={vendorName} />
+
+      <BillActions bill={bill} />
 
       <section className="flex flex-col gap-3" aria-labelledby="line-items-heading">
         <h2 id="line-items-heading" className="text-sm font-semibold text-foreground">
