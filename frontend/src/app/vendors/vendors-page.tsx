@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, Search } from 'lucide-react';
 import {
   flexRender,
   getCoreRowModel,
@@ -14,7 +14,13 @@ import {
 import { apiFetch, ApiError, ErrorCode } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { VendorFormDialog } from '@/components/vendors/vendor-form-dialog';
 import {
   Table,
   TableBody,
@@ -50,6 +56,17 @@ export function VendorsPage(): React.JSX.Element {
   const hydrated = useRoleHydrated();
   const activeUserId = useRoleStore((state) => state.activeUser.id);
   const canCreate = useCan('vendor.create');
+  const canUpdate = useCan('vendor.update');
+  const [editorVendor, setEditorVendor] = useState<Vendor | undefined>(undefined);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const openCreate = (): void => {
+    setEditorVendor(undefined);
+    setEditorOpen(true);
+  };
+  const openEdit = (vendor: Vendor): void => {
+    setEditorVendor(vendor);
+    setEditorOpen(true);
+  };
 
   const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
   const pageSize = Math.max(
@@ -118,8 +135,8 @@ export function VendorsPage(): React.JSX.Element {
     }
   }, [visibility]);
 
-  const columns = useMemo<ColumnDef<Vendor>[]>(
-    () => [
+  const columns = useMemo<ColumnDef<Vendor>[]>(() => {
+    const base: ColumnDef<Vendor>[] = [
       {
         id: 'name',
         header: 'Name',
@@ -159,9 +176,28 @@ export function VendorsPage(): React.JSX.Element {
         cell: ({ row }) => <span className="text-sm">{formatDate(row.original.createdAt)}</span>,
         meta: { label: 'Created' },
       },
-    ],
-    [billCounts],
-  );
+    ];
+    if (canUpdate) {
+      base.push({
+        id: 'actions',
+        header: () => <span className="sr-only">Actions</span>,
+        cell: ({ row }) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost" aria-label={`Actions for ${row.original.name}`}>
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => openEdit(row.original)}>Edit</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ),
+        meta: { label: 'Actions' },
+      });
+    }
+    return base;
+  }, [billCounts, canUpdate]);
 
   const table = useReactTable({
     data: vendors,
@@ -186,17 +222,10 @@ export function VendorsPage(): React.JSX.Element {
           </p>
         </div>
         {canCreate ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button size="sm" disabled aria-label="New vendor">
-                  <Plus className="size-4" />
-                  New vendor
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Coming in Phase 10</TooltipContent>
-          </Tooltip>
+          <Button size="sm" onClick={openCreate} aria-label="New vendor">
+            <Plus className="size-4" />
+            New vendor
+          </Button>
         ) : null}
       </header>
 
@@ -262,6 +291,8 @@ export function VendorsPage(): React.JSX.Element {
           </div>
         </footer>
       ) : null}
+
+      <VendorFormDialog open={editorOpen} onOpenChange={setEditorOpen} vendor={editorVendor} />
     </div>
   );
 }
