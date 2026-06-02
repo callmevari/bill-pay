@@ -50,7 +50,10 @@ const BILL_STATUSES = new Set<string>(Object.values(BillStatus));
 
 const billInclude = {
   lineItems: true,
-  approvals: { orderBy: { createdAt: 'asc' } },
+  approvals: {
+    orderBy: { createdAt: 'asc' },
+    include: { approver: { select: { name: true } } },
+  },
   payment: true,
 } as const;
 
@@ -483,6 +486,7 @@ export class BillsService {
           action: 'payment.created',
           toStatus: PaymentStatus.UNSCHEDULED,
           metadata: { method: paymentMethod, billId: id },
+          createdAt: new Date(),
         },
       });
 
@@ -614,6 +618,7 @@ export class BillsService {
               fromStatus: existingPayment.status,
               toStatus: PaymentStatus.CANCELED,
               metadata: { triggeredBy: 'bill.archived' },
+              createdAt: new Date(),
             },
           });
           cancelledPaymentId = existingPayment.id;
@@ -739,6 +744,11 @@ export class BillsService {
     toStatus: BillStatus,
     metadata?: Record<string, unknown>,
   ): Promise<void> {
+    // Explicit `new Date()` instead of `@default(now())`: Postgres' `now()`
+    // is `transaction_timestamp()` and ties for every row inserted in the
+    // same `$transaction`, which destroys lifecycle ordering when two log
+    // rows are written in the same flow. A JS-side timestamp captures the
+    // moment the helper is called, which advances between awaits.
     await tx.activityLog.create({
       data: {
         entityType: ActivityEntityType.BILL,
@@ -749,6 +759,7 @@ export class BillsService {
         fromStatus,
         toStatus,
         metadata: (metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+        createdAt: new Date(),
       },
     });
   }
@@ -824,6 +835,7 @@ export class BillsService {
         actorRole: actor.role,
         action,
         metadata: metadata as Prisma.InputJsonValue,
+        createdAt: new Date(),
       },
     });
   }

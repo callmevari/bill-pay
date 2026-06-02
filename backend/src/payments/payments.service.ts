@@ -87,16 +87,10 @@ export class PaymentsService {
         { scheduledFor },
       );
 
-      // Propagate to Bill: APPROVED -> SCHEDULED.
-      await this.casBillFromPayment(
-        tx,
-        payment.billId,
-        [BillStatus.APPROVED],
-        BillStatus.SCHEDULED,
-        actor,
-        'bill.scheduled',
-      );
-
+      // Log the payment action BEFORE the bill cascade so the activity
+      // timeline reflects lifecycle causality (the payment moved, that
+      // caused the bill to follow). The CAS already happened; this is
+      // just the audit order.
       await this.logPaymentTransition(
         tx,
         id,
@@ -105,6 +99,16 @@ export class PaymentsService {
         fromStatus,
         PaymentStatus.SCHEDULED,
         { scheduledFor: scheduledFor.toISOString() },
+      );
+
+      // Propagate to Bill: APPROVED -> SCHEDULED.
+      await this.casBillFromPayment(
+        tx,
+        payment.billId,
+        [BillStatus.APPROVED],
+        BillStatus.SCHEDULED,
+        actor,
+        'bill.scheduled',
       );
 
       return tx.payment.findUniqueOrThrow({ where: { id } });
@@ -123,6 +127,16 @@ export class PaymentsService {
         { scheduledFor: null },
       );
 
+      // Log payment action before propagating (lifecycle causality).
+      await this.logPaymentTransition(
+        tx,
+        id,
+        actor,
+        'payment.unscheduled',
+        fromStatus,
+        PaymentStatus.UNSCHEDULED,
+      );
+
       // Bill SCHEDULED -> APPROVED.
       await this.casBillFromPayment(
         tx,
@@ -131,15 +145,6 @@ export class PaymentsService {
         BillStatus.APPROVED,
         actor,
         'bill.unscheduled',
-      );
-
-      await this.logPaymentTransition(
-        tx,
-        id,
-        actor,
-        'payment.unscheduled',
-        fromStatus,
-        PaymentStatus.UNSCHEDULED,
       );
 
       return tx.payment.findUniqueOrThrow({ where: { id } });
@@ -183,6 +188,16 @@ export class PaymentsService {
         { paidAt },
       );
 
+      // Log payment action before propagating (lifecycle causality).
+      await this.logPaymentTransition(
+        tx,
+        id,
+        actor,
+        'payment.marked_as_paid',
+        fromStatus,
+        PaymentStatus.PAID,
+      );
+
       // Bill -> PAID (from SCHEDULED).
       await this.casBillFromPayment(
         tx,
@@ -191,15 +206,6 @@ export class PaymentsService {
         BillStatus.PAID,
         actor,
         'bill.paid',
-      );
-
-      await this.logPaymentTransition(
-        tx,
-        id,
-        actor,
-        'payment.marked_as_paid',
-        fromStatus,
-        PaymentStatus.PAID,
       );
 
       return tx.payment.findUniqueOrThrow({ where: { id } });
@@ -222,6 +228,16 @@ export class PaymentsService {
         { canceledAt },
       );
 
+      // Log payment action before propagating (lifecycle causality).
+      await this.logPaymentTransition(
+        tx,
+        id,
+        actor,
+        'payment.canceled',
+        fromStatus,
+        PaymentStatus.CANCELED,
+      );
+
       // Bill SCHEDULED -> APPROVED (un-schedules the bill).
       await this.casBillFromPayment(
         tx,
@@ -230,15 +246,6 @@ export class PaymentsService {
         BillStatus.APPROVED,
         actor,
         'bill.payment_canceled',
-      );
-
-      await this.logPaymentTransition(
-        tx,
-        id,
-        actor,
-        'payment.canceled',
-        fromStatus,
-        PaymentStatus.CANCELED,
       );
 
       return tx.payment.findUniqueOrThrow({ where: { id } });
@@ -383,6 +390,11 @@ export class PaymentsService {
         },
       });
     }
+    // Explicit `new Date()` instead of `@default(now())`: see the
+    // matching note on `BillsService.logBillTransition` — Postgres'
+    // transaction_timestamp ties for every row in the same tx, which
+    // breaks lifecycle ordering when a payment action propagates to
+    // the bill.
     await tx.activityLog.create({
       data: {
         entityType: ActivityEntityType.BILL,
@@ -393,6 +405,7 @@ export class PaymentsService {
         fromStatus: fresh.status,
         toStatus: to,
         metadata: { triggeredBy: 'payment' },
+        createdAt: new Date(),
       },
     });
   }
@@ -416,6 +429,7 @@ export class PaymentsService {
         fromStatus,
         toStatus,
         metadata: (metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+        createdAt: new Date(),
       },
     });
   }

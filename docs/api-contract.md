@@ -120,7 +120,7 @@ Paginated list with filters and sorts.
 - `q` — free-text, case-insensitive, matches `invoiceNumber`, `description`, or `vendor.name`.
 - `sort` — one of `createdAt | updatedAt | amount | status | dueDate | invoiceDate | invoiceNumber | vendor`, optionally prefixed with `-` for descending. Default `-createdAt`. `vendor` sorts by `vendor.name`.
 
-**200** → `{ data: BillResponse[], meta }`. Each `BillResponse` includes its `lineItems` array, its `approvals` array (empty until the bill is submitted; one row per Approval after that), and its `payment` (the linked Payment snapshot, `null` until the bill is approved).
+**200** → `{ data: BillResponse[], meta }`. Each `BillResponse` includes its `lineItems` array, its `approvals` array (empty until the bill is submitted; one row per Approval after that, each row carrying `approverId` plus the approver's `approverName` joined at read time), and its `payment` (the linked Payment snapshot, `null` until the bill is approved).
 
 ### `GET /bills/:id`
 
