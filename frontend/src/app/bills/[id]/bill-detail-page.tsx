@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { ChevronLeft } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronLeft, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -21,15 +22,22 @@ import { PaymentStatusBadge } from '@/components/bills/payment-status-badge';
 import { PaymentMethodBadge } from '@/components/bills/payment-method-badge';
 import { BillActions } from '@/components/bills/bill-actions';
 import { PaymentActions } from '@/components/bills/payment-actions';
+import { LineItemFormDialog } from '@/components/bills/line-item-form-dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ActivityTimeline } from '@/components/activity/activity-timeline';
 import { CopyIdButton } from '@/components/ui/copy-id-button';
 import { useBillQuery } from '@/hooks/use-bill-query';
 import { useBillActivityQuery } from '@/hooks/use-bill-activity-query';
 import { useAllVendorsQuery } from '@/hooks/use-vendors-query';
+import { useCan } from '@/hooks/use-can';
+import {
+  EDITABLE_BILL_STATUSES,
+  useRemoveLineItemMutation,
+} from '@/hooks/use-line-item-mutations';
 import { useRoleHydrated } from '@/stores/role-store';
 import { ApiError, ErrorCode } from '@/lib/api';
 import { formatDate, formatMoney, humanizeEnum } from '@/lib/format';
-import type { ActivityLogEntry, Bill, BillApproval, BillPayment } from '@/lib/api-types';
+import type { ActivityLogEntry, Bill, BillApproval, BillLineItem, BillPayment } from '@/lib/api-types';
 
 interface BillDetailPageProps {
   billId: string;
@@ -93,43 +101,7 @@ export function BillDetailPage({ billId }: BillDetailPageProps): React.JSX.Eleme
 
       <BillActions bill={bill} />
 
-      <section className="flex flex-col gap-3" aria-labelledby="line-items-heading">
-        <h2 id="line-items-heading" className="text-sm font-semibold text-foreground">
-          Line items
-        </h2>
-        {bill.lineItems.length === 0 ? (
-          <Empty title="No line items on this bill" />
-        ) : (
-          <div className="rounded-lg border border-border bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="text-right">Quantity</TableHead>
-                  <TableHead className="text-right">Unit price</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {bill.lineItems.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="text-sm">{item.description}</TableCell>
-                    <TableCell className="text-right font-mono text-sm tabular-nums">
-                      {item.quantity}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm tabular-nums">
-                      {formatMoney(item.unitPrice, bill.currency)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm tabular-nums">
-                      {formatMoney(item.total, bill.currency)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </section>
+      <LineItemsBlock bill={bill} />
 
       <section className="flex flex-col gap-3" aria-labelledby="payment-heading">
         <h2 id="payment-heading" className="text-sm font-semibold text-foreground">
@@ -157,6 +129,138 @@ export function BillDetailPage({ billId }: BillDetailPageProps): React.JSX.Eleme
         />
       </section>
     </div>
+  );
+}
+
+function LineItemsBlock({ bill }: { bill: Bill }): React.JSX.Element {
+  const canEdit =
+    useCan('bill.lineItem.write') && EDITABLE_BILL_STATUSES.includes(bill.status);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<BillLineItem | null>(null);
+  const [removing, setRemoving] = useState<BillLineItem | null>(null);
+  const removeMutation = useRemoveLineItemMutation();
+
+  const handleRemove = async (): Promise<void> => {
+    if (!removing) return;
+    try {
+      await removeMutation.mutateAsync({ billId: bill.id, lineItemId: removing.id });
+      setRemoving(null);
+    } catch {
+      // toast already surfaced by the hook; keep the dialog open so the
+      // user can retry or cancel deliberately.
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-3" aria-labelledby="line-items-heading">
+      <div className="flex items-center justify-between gap-2">
+        <h2 id="line-items-heading" className="text-sm font-semibold text-foreground">
+          Line items
+        </h2>
+        {canEdit ? (
+          <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
+            <Plus className="size-3.5" />
+            Add line item
+          </Button>
+        ) : null}
+      </div>
+
+      {bill.lineItems.length === 0 ? (
+        <Empty
+          title="No line items on this bill"
+          description={
+            canEdit
+              ? 'Add line items so the breakdown matches the invoice.'
+              : undefined
+          }
+        />
+      ) : (
+        <div className="rounded-lg border border-border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Description</TableHead>
+                <TableHead className="text-right">Quantity</TableHead>
+                <TableHead className="text-right">Unit price</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                {canEdit ? <TableHead className="w-20" aria-label="Actions" /> : null}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {bill.lineItems.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell className="text-sm">{item.description}</TableCell>
+                  <TableCell className="text-right font-mono text-sm tabular-nums">
+                    {item.quantity}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-sm tabular-nums">
+                    {formatMoney(item.unitPrice, bill.currency)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-sm tabular-nums">
+                    {formatMoney(item.total, bill.currency)}
+                  </TableCell>
+                  {canEdit ? (
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label="Edit line item"
+                          onClick={() => setEditing(item)}
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label="Remove line item"
+                          onClick={() => setRemoving(item)}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  ) : null}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <LineItemFormDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        billId={bill.id}
+        currency={bill.currency}
+      />
+      <LineItemFormDialog
+        open={editing !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null);
+        }}
+        billId={bill.id}
+        currency={bill.currency}
+        lineItem={editing ?? undefined}
+      />
+      <ConfirmDialog
+        open={removing !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoving(null);
+        }}
+        title="Remove line item?"
+        description={
+          removing
+            ? `"${removing.description}" will be removed from this bill.`
+            : ''
+        }
+        confirmLabel="Remove"
+        destructive
+        pending={removeMutation.isPending}
+        onConfirm={() => void handleRemove()}
+      />
+    </section>
   );
 }
 
