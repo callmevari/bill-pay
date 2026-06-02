@@ -11,7 +11,12 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import type { Vendor } from '@/lib/api-types';
 
@@ -53,6 +58,10 @@ export function VendorCombobox({
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="overflow-hidden p-0">
+          <DialogTitle className="sr-only">Select a vendor</DialogTitle>
+          <DialogDescription className="sr-only">
+            Search and pick a vendor for this bill.
+          </DialogDescription>
           <Command>
             <CommandInput placeholder="Search vendors..." />
             <CommandList>
