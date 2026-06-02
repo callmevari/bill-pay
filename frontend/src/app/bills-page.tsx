@@ -1,11 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { BillsTable } from '@/components/bills/bills-table';
 import { EMPTY_FILTERS, FilterBar, type BillFiltersValue } from '@/components/bills/filter-bar';
 import { BILL_TABS, DEFAULT_TAB, findTab, type BillTabId } from '@/lib/bill-tabs';
@@ -156,17 +156,12 @@ export function BillsPage(): React.JSX.Element {
           </p>
         </div>
         {canCreate ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button size="sm" disabled aria-label="New bill">
-                  <Plus className="size-4" />
-                  New bill
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Coming in Phase 10</TooltipContent>
-          </Tooltip>
+          <Button asChild size="sm" aria-label="New bill">
+            <Link href="/bills/new">
+              <Plus className="size-4" />
+              New bill
+            </Link>
+          </Button>
         ) : null}
       </header>
 
