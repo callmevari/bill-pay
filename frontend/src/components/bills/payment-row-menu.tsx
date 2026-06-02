@@ -65,15 +65,20 @@ export function PaymentRowMenu({ payment }: PaymentRowMenuProps): React.JSX.Elem
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [scheduledFor, setScheduledFor] = useState(tomorrowYmd());
 
-  const hasAnyRole =
-    canSchedule || canUnschedule || canRelease || canMark || canCancel || canRetry;
-  if (!hasAnyRole) {
-    return (
-      <Button size="icon" variant="ghost" disabled aria-label="No actions available">
-        <MoreHorizontal className="size-4" />
-      </Button>
-    );
-  }
+  // Hide the menu entirely when no action is reachable for this payment
+  // — either because the user's role allows none of them OR because the
+  // payment is in a terminal/inactive state (PAID, CANCELED) where every
+  // transition would be invalid. Matches the behaviour for bills with no
+  // payment at all (REJECTED, DRAFT-archived), keeping the History tab
+  // consistent.
+  const reachable =
+    (canSchedule && isPaymentActionAvailable('schedule', payment.status)) ||
+    (canUnschedule && isPaymentActionAvailable('unschedule', payment.status)) ||
+    (canRelease && isPaymentActionAvailable('release', payment.status)) ||
+    (canMark && isPaymentActionAvailable('markAsPaid', payment.status)) ||
+    (canCancel && isPaymentActionAvailable('cancel', payment.status)) ||
+    (canRetry && isPaymentActionAvailable('retry', payment.status));
+  if (!reachable) return <></>;
 
   const close = (): void => setDialog(null);
 

@@ -29,7 +29,10 @@ export function useUpdateBillMutation(): UseMutationResult<Bill, ApiError, Updat
         current && current.id === bill.id ? bill : current,
       );
       void queryClient.invalidateQueries({ queryKey: ['bills'] });
-      void queryClient.invalidateQueries({ queryKey: ['bill-activity', bill.id] });
+      // Activity key is `['bill-activity', activeUserId, billId, ...]`,
+      // so a `[..., bill.id]` prefix never matches. Invalidate by
+      // namespace only.
+      void queryClient.invalidateQueries({ queryKey: ['bill-activity'] });
       toast.success(`Bill ${bill.invoiceNumber} updated.`);
     },
     onError: (error) => {

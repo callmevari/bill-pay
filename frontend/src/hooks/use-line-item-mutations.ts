@@ -28,10 +28,16 @@ interface RemoveVariables {
   lineItemId: string;
 }
 
-function invalidateBill(queryClient: ReturnType<typeof useQueryClient>, billId: string): void {
-  void queryClient.invalidateQueries({ queryKey: ['bill', billId] });
+function invalidateBill(queryClient: ReturnType<typeof useQueryClient>, _billId: string): void {
+  // Invalidate by top-level prefix only — the actual query keys carry
+  // `activeUserId` between the namespace and the id
+  // (`['bill', activeUserId, billId]`, `['bill-activity', activeUserId,
+  // billId, pageSize]`), so a `['bill', billId]` prefix would never
+  // match. Letting every mounted variant refetch is cheap; the user
+  // sees the line items update without a manual refresh.
+  void queryClient.invalidateQueries({ queryKey: ['bill'] });
   void queryClient.invalidateQueries({ queryKey: ['bills'] });
-  void queryClient.invalidateQueries({ queryKey: ['bill-activity', billId] });
+  void queryClient.invalidateQueries({ queryKey: ['bill-activity'] });
 }
 
 export function useAddLineItemMutation(): UseMutationResult<BillLineItem, ApiError, AddVariables> {

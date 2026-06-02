@@ -190,7 +190,7 @@ export function BillsTable({
         header: () => <span className="sr-only">Actions</span>,
         cell: ({ row }) => {
           const payment = row.original.payment;
-          if (!payment) return <span className="text-xs text-muted-foreground">—</span>;
+          if (!payment) return null;
           // Stop click propagation so the row's "open detail" handler
           // does not fire when the user is targeting the row dropdown.
           return (

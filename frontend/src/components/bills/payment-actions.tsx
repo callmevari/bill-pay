@@ -71,9 +71,18 @@ export function PaymentActions({ payment }: PaymentActionsProps): React.JSX.Elem
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
 
-  const hasAnyRole =
-    canSchedule || canUnschedule || canRelease || canMark || canCancel || canRetry;
-  if (!hasAnyRole) return <></>;
+  // Hide the entire cluster when no action is reachable for this
+  // payment's status (terminal or role-restricted), so the detail page
+  // doesn't render a wall of disabled buttons for PAID / CANCELED
+  // payments or for Viewer / Approver roles.
+  const reachable =
+    (canSchedule && isPaymentActionAvailable('schedule', payment.status)) ||
+    (canUnschedule && isPaymentActionAvailable('unschedule', payment.status)) ||
+    (canRelease && isPaymentActionAvailable('release', payment.status)) ||
+    (canMark && isPaymentActionAvailable('markAsPaid', payment.status)) ||
+    (canCancel && isPaymentActionAvailable('cancel', payment.status)) ||
+    (canRetry && isPaymentActionAvailable('retry', payment.status));
+  if (!reachable) return <></>;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
