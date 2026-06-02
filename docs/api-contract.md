@@ -136,6 +136,7 @@ Paginated list with filters and sorts.
   "description": "May infrastructure",
   "amount": "12480.55",
   "currency": "USD",
+  "paymentMethod": "WIRE",
   "invoiceDate": "2026-05-01T00:00:00.000Z",
   "dueDate": "2026-05-31T00:00:00.000Z",
   "archivedAt": null,
@@ -158,6 +159,8 @@ Paginated list with filters and sorts.
 }
 ```
 
+`paymentMethod` (`ACH | WIRE | CHECK | CARD | OFF_PLATFORM | null`) is the per-bill override of the vendor's default. When set, it wins over `vendor.defaultPaymentMethod` at approve time (resolution order documented under `POST /bills/:id/approve`). `null` means "fall back to the vendor".
+
 ### `POST /bills` — Admin only
 
 Creates a bill in `DRAFT`. The acting user is recorded as `createdById`. Line items may be supplied inline; their `total` is computed server-side.
@@ -170,6 +173,7 @@ Creates a bill in `DRAFT`. The acting user is recorded as `createdById`. Line it
   "description": "May infrastructure",
   "amount": "12480.55",
   "currency": "USD",
+  "paymentMethod": "WIRE",
   "invoiceDate": "2026-05-01T00:00:00.000Z",
   "dueDate": "2026-05-31T00:00:00.000Z",
   "lineItems": [
@@ -178,7 +182,7 @@ Creates a bill in `DRAFT`. The acting user is recorded as `createdById`. Line it
 }
 ```
 
-`currency` is a 3-letter uppercase ISO 4217 code (e.g. `"USD"`) and defaults to `"USD"` when omitted. `dueDate` must be on or after `invoiceDate`.
+`currency` is a 3-letter uppercase ISO 4217 code (e.g. `"USD"`) and defaults to `"USD"` when omitted. `dueDate` must be on or after `invoiceDate`. `paymentMethod` is an optional per-bill override of the vendor default — see `POST /bills/:id/approve` for the resolution rule.
 
 **201** → bare `BillResponse`. **400 VALIDATION_ERROR** on invalid body — including `null` on any required-non-null field, decimals outside `Decimal(12, 2)`, currency not matching `^[A-Z]{3}$`, or `dueDate < invoiceDate`. **403 INSUFFICIENT_PERMISSIONS** for non-Admin. **404 VENDOR_NOT_FOUND** if `vendorId` does not reference an existing vendor (pre-checked and also re-translated from a Prisma FK race). **409 UNIQUE_CONSTRAINT_VIOLATION** when `(vendorId, invoiceNumber)` already exists.
 
@@ -186,7 +190,7 @@ Creates a bill in `DRAFT`. The acting user is recorded as `createdById`. Line it
 
 Updates an editable bill. `vendorId`, `invoiceNumber`, and line items are not patchable here — line items have their own sub-resource. `description` is the only nullable field (send `null` to clear); the others reject `null`.
 
-**Body**: any subset of `description?: string | null`, `amount?: string`, `currency?: string`, `invoiceDate?: ISO-8601`, `dueDate?: ISO-8601`. Same shape rules as create — `amount` is bounded to `Decimal(12, 2)`, `currency` must match `^[A-Z]{3}$`, and the resulting `dueDate` must remain on or after `invoiceDate`.
+**Body**: any subset of `description?: string | null`, `amount?: string`, `currency?: string`, `paymentMethod?: PaymentMethod | null`, `invoiceDate?: ISO-8601`, `dueDate?: ISO-8601`. Same shape rules as create — `amount` is bounded to `Decimal(12, 2)`, `currency` must match `^[A-Z]{3}$`, and the resulting `dueDate` must remain on or after `invoiceDate`. `paymentMethod` accepts either a `PaymentMethod` enum value or `null` (clears the override and falls back to the vendor default at approve time); unknown enum values → `400 VALIDATION_ERROR`.
 
 **200** → updated `BillResponse`. **400 VALIDATION_ERROR** on invalid body. **404 NOT_FOUND** if missing. **409 BILL_NOT_EDITABLE** (`details: { status }`) when the bill's status is terminal (`PAID`, `REJECTED`, or `ARCHIVED`). **403** for non-Admin.
 
@@ -225,7 +229,7 @@ Four action endpoints drive the bill through its state machine. Each is a `POST`
 
 #### `POST /bills/:id/approve` — Admin or Approver
 
-`PENDING_APPROVAL → APPROVED`. Updates the existing `Approval` row to `APPROVED` and sets `approverId` to the acting user (the actual approver, which may be an Admin). Creates the linked `Payment` row in `UNSCHEDULED` with `method = vendor.defaultPaymentMethod ?? 'ACH'` and `amount` / `currency` copied from the bill. **200** → updated `BillResponse`. **409 BILL_INVALID_TRANSITION** if the bill is not in `PENDING_APPROVAL`. A `payment.created` `ActivityLog` row is written alongside the `bill.approved` entry.
+`PENDING_APPROVAL → APPROVED`. Updates the existing `Approval` row to `APPROVED` and sets `approverId` to the acting user (the actual approver, which may be an Admin). Creates the linked `Payment` row in `UNSCHEDULED` with `amount` / `currency` copied from the bill and `method` resolved as **`bill.paymentMethod ?? vendor.defaultPaymentMethod ?? 'ACH'`** — per-bill override beats vendor default beats `ACH` fallback. **200** → updated `BillResponse`. **409 BILL_INVALID_TRANSITION** if the bill is not in `PENDING_APPROVAL`. A `payment.created` `ActivityLog` row is written alongside the `bill.approved` entry; its `metadata` carries `{ "method": <resolved>, "methodSource": "bill" | "vendor" | "fallback", "billId": <bill.id> }` so the UI can explain why a particular method was chosen.
 
 #### `POST /bills/:id/reject` — Admin or Approver
 

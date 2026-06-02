@@ -61,6 +61,10 @@ ARCHIVED (also reachable from any non-PAID state)
 
 `REJECTED` and `ARCHIVED` are terminal. `PAID` is terminal. Hard-delete is allowed only in `DRAFT`.
 
+#### Payment-method resolution on approve
+
+`Bill.paymentMethod` is a nullable per-bill override that wins over the vendor default at approve time. The service resolves `Payment.method` as **`bill.paymentMethod ?? vendor.defaultPaymentMethod ?? 'ACH'`** and records which source won under `metadata.methodSource` (`"bill" | "vendor" | "fallback"`) on the `payment.created` activity row. Storing the source — not just the resolved value — lets the UI explain "this Stripe invoice was wired because the bill said so" rather than just showing a method that doesn't match the vendor's usual default. The override is editable while the bill is non-terminal (it lives on the Bill, not the Payment), so finance can change it up until approve runs; once the Payment exists, its method is the source of truth and is mutated only through the Payment lifecycle.
+
 #### Bill tab mapping (UI ↔ BE)
 
 The Bills page tabs map to `BillStatus` filters. Each bill appears in exactly one tab.

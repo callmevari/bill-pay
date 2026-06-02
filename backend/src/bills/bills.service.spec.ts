@@ -5,7 +5,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { BillStatus, Prisma, Role } from '@prisma/client';
+import {
+  ApprovalStatus,
+  BillStatus,
+  PaymentMethod,
+  Prisma,
+  Role,
+} from '@prisma/client';
 
 import type { AuthUser } from '../auth/auth-user';
 import { PrismaService } from '../prisma/prisma.service';
@@ -16,10 +22,12 @@ const actor: AuthUser = { id: 'a1', name: 'Admin', role: Role.ADMIN };
 interface PrismaMock {
   bill: {
     findUnique: jest.Mock;
+    findUniqueOrThrow: jest.Mock;
     findMany: jest.Mock;
     count: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
+    updateMany: jest.Mock;
   };
   billLineItem: {
     findUnique: jest.Mock;
@@ -27,6 +35,16 @@ interface PrismaMock {
     create: jest.Mock;
     update: jest.Mock;
     delete: jest.Mock;
+  };
+  approval: {
+    findFirstOrThrow: jest.Mock;
+    update: jest.Mock;
+  };
+  payment: {
+    create: jest.Mock;
+  };
+  vendor: {
+    findUnique: jest.Mock;
   };
   activityLog: { create: jest.Mock };
   user: { findFirst: jest.Mock };
@@ -41,10 +59,12 @@ describe('BillsService', () => {
     prisma = {
       bill: {
         findUnique: jest.fn(),
+        findUniqueOrThrow: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
       },
       billLineItem: {
         findUnique: jest.fn(),
@@ -52,6 +72,16 @@ describe('BillsService', () => {
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
+      },
+      approval: {
+        findFirstOrThrow: jest.fn(),
+        update: jest.fn(),
+      },
+      payment: {
+        create: jest.fn(),
+      },
+      vendor: {
+        findUnique: jest.fn(),
       },
       activityLog: { create: jest.fn() },
       user: { findFirst: jest.fn() },
@@ -248,6 +278,163 @@ describe('BillsService', () => {
       await expect(service.approve('b1', actor)).rejects.toBeInstanceOf(
         ConflictException,
       );
+    });
+
+    // Payment-method resolution precedence: bill override > vendor
+    // default > ACH fallback. The assertion is on the `method` value
+    // passed to `tx.payment.create` and the `methodSource` recorded on
+    // the `payment.created` activity log row — both decisions live
+    // entirely in the service, so they belong here rather than e2e.
+    describe('payment-method resolution', () => {
+      type PaymentCreateArgs = { data: { method: PaymentMethod } };
+      type ActivityCreateArgs = {
+        data: {
+          action: string;
+          metadata?: { method?: string; methodSource?: string };
+        };
+      };
+
+      const capturedPaymentMethod = (): PaymentMethod => {
+        const calls = prisma.payment.create.mock.calls as PaymentCreateArgs[][];
+        const args = calls[0]?.[0];
+        if (!args) throw new Error('payment.create was not called');
+        return args.data.method;
+      };
+
+      const capturedPaymentCreatedMetadata = ():
+        | { method?: string; methodSource?: string }
+        | undefined => {
+        const calls = prisma.activityLog.create.mock
+          .calls as ActivityCreateArgs[][];
+        const match = calls.find(
+          (call) => call[0]?.data.action === 'payment.created',
+        );
+        return match?.[0]?.data.metadata;
+      };
+
+      const stubApproveTransaction = (params: {
+        billPaymentMethod: PaymentMethod | null;
+        vendorDefault: PaymentMethod | null;
+      }): void => {
+        // Outer `loadOrThrow` read for the pre-CAS validation.
+        prisma.bill.findUnique
+          .mockResolvedValueOnce({
+            ...lifecycleBill(BillStatus.PENDING_APPROVAL),
+            paymentMethod: params.billPaymentMethod,
+          })
+          // casTransition's own `findUnique({ select: status })` read.
+          .mockResolvedValueOnce({ status: BillStatus.PENDING_APPROVAL });
+        prisma.bill.updateMany.mockResolvedValue({ count: 1 });
+        // After CAS: select(vendorId, amount, currency, paymentMethod),
+        // then the final billInclude read for the response mapper.
+        prisma.bill.findUniqueOrThrow
+          .mockResolvedValueOnce({
+            vendorId: 'v1',
+            amount: new Prisma.Decimal('100.00'),
+            currency: 'USD',
+            paymentMethod: params.billPaymentMethod,
+          })
+          .mockResolvedValueOnce({
+            id: 'b1',
+            status: BillStatus.APPROVED,
+            invoiceNumber: 'INV-X',
+            vendorId: 'v1',
+            createdById: 'a1',
+            description: null,
+            amount: new Prisma.Decimal('100.00'),
+            currency: 'USD',
+            paymentMethod: params.billPaymentMethod,
+            invoiceDate: new Date('2026-05-01T00:00:00.000Z'),
+            dueDate: new Date('2026-05-31T00:00:00.000Z'),
+            archivedAt: null,
+            createdAt: new Date('2026-05-29T10:00:00.000Z'),
+            updatedAt: new Date('2026-05-29T10:00:00.000Z'),
+            lineItems: [],
+            approvals: [],
+            payment: null,
+          });
+        prisma.vendor.findUnique.mockResolvedValue({
+          defaultPaymentMethod: params.vendorDefault,
+        });
+        prisma.approval.findFirstOrThrow.mockResolvedValue({
+          id: 'ap1',
+          billId: 'b1',
+          status: ApprovalStatus.PENDING,
+        });
+        prisma.approval.update.mockResolvedValue({
+          id: 'ap1',
+          billId: 'b1',
+          status: ApprovalStatus.APPROVED,
+        });
+        prisma.payment.create.mockImplementation(
+          (args: {
+            data: { method: PaymentMethod; billId: string; amount: unknown };
+          }) =>
+            Promise.resolve({
+              id: 'p1',
+              billId: args.data.billId,
+              status: 'UNSCHEDULED',
+              method: args.data.method,
+              amount: args.data.amount,
+              currency: 'USD',
+            }),
+        );
+        prisma.activityLog.create.mockResolvedValue(undefined);
+        prisma.$transaction.mockImplementation(
+          async (cb: (tx: PrismaMock) => Promise<unknown>) => cb(prisma),
+        );
+      };
+
+      it('uses bill.paymentMethod when set, recording methodSource "bill"', async () => {
+        stubApproveTransaction({
+          billPaymentMethod: PaymentMethod.WIRE,
+          vendorDefault: PaymentMethod.ACH,
+        });
+
+        await service.approve('b1', actor);
+
+        expect(capturedPaymentMethod()).toBe(PaymentMethod.WIRE);
+        expect(capturedPaymentCreatedMetadata()).toEqual(
+          expect.objectContaining({
+            method: PaymentMethod.WIRE,
+            methodSource: 'bill',
+          }),
+        );
+      });
+
+      it('falls back to vendor.defaultPaymentMethod when the bill has no override, recording methodSource "vendor"', async () => {
+        stubApproveTransaction({
+          billPaymentMethod: null,
+          vendorDefault: PaymentMethod.CHECK,
+        });
+
+        await service.approve('b1', actor);
+
+        expect(capturedPaymentMethod()).toBe(PaymentMethod.CHECK);
+        expect(capturedPaymentCreatedMetadata()).toEqual(
+          expect.objectContaining({
+            method: PaymentMethod.CHECK,
+            methodSource: 'vendor',
+          }),
+        );
+      });
+
+      it('falls back to ACH when both bill and vendor are null, recording methodSource "fallback"', async () => {
+        stubApproveTransaction({
+          billPaymentMethod: null,
+          vendorDefault: null,
+        });
+
+        await service.approve('b1', actor);
+
+        expect(capturedPaymentMethod()).toBe(PaymentMethod.ACH);
+        expect(capturedPaymentCreatedMetadata()).toEqual(
+          expect.objectContaining({
+            method: PaymentMethod.ACH,
+            methodSource: 'fallback',
+          }),
+        );
+      });
     });
   });
 

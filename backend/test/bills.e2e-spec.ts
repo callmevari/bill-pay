@@ -1,5 +1,10 @@
 import { INestApplication } from '@nestjs/common';
-import { BillStatus, Prisma, PrismaClient } from '@prisma/client';
+import {
+  BillStatus,
+  PaymentMethod,
+  Prisma,
+  PrismaClient,
+} from '@prisma/client';
 import request from 'supertest';
 import { App } from 'supertest/types';
 
@@ -197,6 +202,60 @@ describe('Bills (e2e)', () => {
     const body = res.body as { error: { code: string; message: string } };
     expect(body.error.code).toBe('VALIDATION_ERROR');
     expect(body.error.message).toMatch(/amount/);
+  });
+
+  it('POST /bills rejects an unknown paymentMethod with 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/bills')
+      .set('x-user-id', actors.admin.id)
+      .send(
+        baseBillBody({
+          invoiceNumber: 'INV-PM-BAD',
+          paymentMethod: 'BANANA',
+        }),
+      );
+    expect(res.status).toBe(400);
+    const body = res.body as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toMatch(/paymentMethod/);
+  });
+
+  it('PATCH /bills/:id updates paymentMethod on an editable DRAFT bill and reads back the new value', async () => {
+    const created = await prisma.bill.create({
+      data: {
+        invoiceNumber: 'INV-PM-EDIT',
+        vendorId: actors.vendor.id,
+        createdById: actors.admin.id,
+        status: BillStatus.DRAFT,
+        amount: new Prisma.Decimal('500.00'),
+        currency: 'USD',
+        paymentMethod: PaymentMethod.ACH,
+        invoiceDate: new Date('2026-05-01T00:00:00.000Z'),
+        dueDate: new Date('2026-05-31T00:00:00.000Z'),
+      },
+    });
+
+    const patchRes = await request(app.getHttpServer())
+      .patch(`/api/v1/bills/${created.id}`)
+      .set('x-user-id', actors.admin.id)
+      .send({ paymentMethod: 'WIRE' });
+    expect(patchRes.status).toBe(200);
+    expect(
+      (patchRes.body as { paymentMethod: PaymentMethod }).paymentMethod,
+    ).toBe(PaymentMethod.WIRE);
+
+    const readRes = await request(app.getHttpServer())
+      .get(`/api/v1/bills/${created.id}`)
+      .set('x-user-id', actors.admin.id);
+    expect(readRes.status).toBe(200);
+    expect(
+      (readRes.body as { paymentMethod: PaymentMethod }).paymentMethod,
+    ).toBe(PaymentMethod.WIRE);
+
+    const stored = await prisma.bill.findUniqueOrThrow({
+      where: { id: created.id },
+    });
+    expect(stored.paymentMethod).toBe(PaymentMethod.WIRE);
   });
 
   it('PATCH /bills/:id returns 409 BILL_NOT_EDITABLE when the bill is in a terminal status', async () => {
