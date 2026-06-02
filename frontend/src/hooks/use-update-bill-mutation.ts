@@ -1,0 +1,39 @@
+'use client';
+
+import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { apiFetch, ApiError } from '@/lib/api';
+import { describeMutationError } from '@/lib/mutation-errors';
+import type { Bill } from '@/lib/api-types';
+
+export interface UpdateBillInput {
+  description?: string | null;
+  amount?: string;
+  currency?: string;
+  invoiceDate?: string;
+  dueDate?: string;
+}
+
+export interface UpdateBillVariables {
+  billId: string;
+  input: UpdateBillInput;
+}
+
+export function useUpdateBillMutation(): UseMutationResult<Bill, ApiError, UpdateBillVariables> {
+  const queryClient = useQueryClient();
+  return useMutation<Bill, ApiError, UpdateBillVariables>({
+    mutationFn: ({ billId, input }) =>
+      apiFetch<Bill>(`/bills/${billId}`, { method: 'PATCH', body: input }),
+    onSuccess: (bill) => {
+      queryClient.setQueriesData<Bill>({ queryKey: ['bill'] }, (current) =>
+        current && current.id === bill.id ? bill : current,
+      );
+      void queryClient.invalidateQueries({ queryKey: ['bills'] });
+      void queryClient.invalidateQueries({ queryKey: ['bill-activity', bill.id] });
+      toast.success(`Bill ${bill.invoiceNumber} updated.`);
+    },
+    onError: (error) => {
+      toast.error(describeMutationError(error, 'Could not update bill.'));
+    },
+  });
+}
