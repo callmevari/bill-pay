@@ -5,6 +5,9 @@ import { apiFetch, ApiError } from '@/lib/api';
 import type { ListEnvelope, Vendor } from '@/lib/api-types';
 import { useRoleStore } from '@/stores/role-store';
 
+// Matches the backend cap on `pageSize` (see `PaginationQueryDto`).
+const MAX_PAGE_SIZE = 100;
+
 export interface VendorsQueryParams {
   page?: number;
   pageSize?: number;
@@ -36,11 +39,35 @@ export function useVendorsQuery(
   });
 }
 
-// All vendors used as a dropdown source / id→name map. Backend caps
-// pageSize at 100; the seed ships ~10 vendors so a single page covers it
-// comfortably.
+// Vendor dropdown source / id→name map. Pages through the backend list
+// until every vendor has been collected; the contract caps `pageSize`
+// at 100, so larger workspaces are still represented correctly without
+// silently truncating the dropdown.
 export function useAllVendorsQuery(
   options: { enabled?: boolean } = {},
 ): UseQueryResult<ListEnvelope<Vendor>, ApiError> {
-  return useVendorsQuery({ pageSize: 100, sort: 'name' }, options);
+  const activeUserId = useRoleStore((state) => state.activeUser.id);
+  return useQuery<ListEnvelope<Vendor>, ApiError>({
+    queryKey: ['vendors-all', activeUserId],
+    queryFn: async () => {
+      const collected: Vendor[] = [];
+      let page = 1;
+      let total = 0;
+      while (true) {
+        const envelope = await apiFetch<ListEnvelope<Vendor>>(
+          `/vendors?page=${page}&pageSize=${MAX_PAGE_SIZE}&sort=name`,
+        );
+        collected.push(...envelope.data);
+        total = envelope.meta.total;
+        if (collected.length >= total || envelope.data.length === 0) break;
+        page += 1;
+      }
+      return {
+        data: collected,
+        meta: { page: 1, pageSize: collected.length, total, totalPages: 1 },
+      };
+    },
+    placeholderData: keepPreviousData,
+    enabled: options.enabled ?? true,
+  });
 }

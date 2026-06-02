@@ -39,7 +39,11 @@ const SECONDARY_NAV: NavItem[] = [
 export function Sidebar(): React.JSX.Element {
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
-      <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
+      <Link
+        href="/"
+        className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4 transition-colors hover:bg-sidebar-accent/60 focus-visible:bg-sidebar-accent/60 focus-visible:outline-none"
+        aria-label="Go to Bills overview"
+      >
         <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#00a6d5] text-white">
           <Wallet className="size-4" />
         </div>
@@ -47,7 +51,7 @@ export function Sidebar(): React.JSX.Element {
           <span className="text-sm font-semibold">Bill Pay</span>
           <span className="text-xs text-muted-foreground">Workspace</span>
         </div>
-      </div>
+      </Link>
 
       <nav className="flex flex-1 flex-col gap-6 px-2 py-4">
         <NavGroup label="Workspace" items={PRIMARY_NAV} />

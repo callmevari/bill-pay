@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -67,17 +67,27 @@ export function FilterBar({
   const debouncedMin = useDebouncedValue(localMin, 300);
   const debouncedMax = useDebouncedValue(localMax, 300);
 
+  // Stash the latest value + onChange in refs so the debounced effects
+  // read the freshest snapshot when they fire. Without this, a user who
+  // changes another filter (vendor, due date) within the 300ms debounce
+  // window would see that change clobbered by the stale `value` captured
+  // when the debounce-only effect was created.
+  const latest = useRef({ value, onChange });
   useEffect(() => {
-    if (debouncedQ !== value.q) onChange({ ...value, q: debouncedQ });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    latest.current = { value, onChange };
+  });
+
+  useEffect(() => {
+    const { value: snapshot, onChange: notify } = latest.current;
+    if (debouncedQ !== snapshot.q) notify({ ...snapshot, q: debouncedQ });
   }, [debouncedQ]);
   useEffect(() => {
-    if (debouncedMin !== value.minAmount) onChange({ ...value, minAmount: debouncedMin });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const { value: snapshot, onChange: notify } = latest.current;
+    if (debouncedMin !== snapshot.minAmount) notify({ ...snapshot, minAmount: debouncedMin });
   }, [debouncedMin]);
   useEffect(() => {
-    if (debouncedMax !== value.maxAmount) onChange({ ...value, maxAmount: debouncedMax });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const { value: snapshot, onChange: notify } = latest.current;
+    if (debouncedMax !== snapshot.maxAmount) notify({ ...snapshot, maxAmount: debouncedMax });
   }, [debouncedMax]);
 
   const hasAnyFilter =
