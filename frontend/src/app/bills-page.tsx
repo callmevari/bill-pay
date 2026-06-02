@@ -193,6 +193,7 @@ export function BillsPage(): React.JSX.Element {
         onSortChange={onSortChange}
         pageSize={pageSize}
         storageKey={STORAGE_COLUMNS_KEY}
+        showPaymentActions={activeTab === 'for-payment' || activeTab === 'history'}
       />
 
       {meta && total > 0 ? (

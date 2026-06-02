@@ -20,6 +20,7 @@ import { BillStatusBadge } from '@/components/bills/bill-status-badge';
 import { PaymentStatusBadge } from '@/components/bills/payment-status-badge';
 import { PaymentMethodBadge } from '@/components/bills/payment-method-badge';
 import { BillActions } from '@/components/bills/bill-actions';
+import { PaymentActions } from '@/components/bills/payment-actions';
 import { ActivityTimeline } from '@/components/activity/activity-timeline';
 import { CopyIdButton } from '@/components/ui/copy-id-button';
 import { useBillQuery } from '@/hooks/use-bill-query';
@@ -246,6 +247,7 @@ function PaymentBlock({
           <p className="mt-1">{payment.failureReason}</p>
         </div>
       ) : null}
+      <PaymentActions payment={payment} />
     </div>
   );
 }
