@@ -82,6 +82,7 @@ export function toBillResponse(bill: BillWithRelations): BillResponseDto {
     description: bill.description,
     amount: bill.amount.toFixed(2),
     currency: bill.currency,
+    paymentMethod: bill.paymentMethod,
     invoiceDate: bill.invoiceDate.toISOString(),
     dueDate: bill.dueDate.toISOString(),
     archivedAt: bill.archivedAt ? bill.archivedAt.toISOString() : null,

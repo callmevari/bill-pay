@@ -1,8 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { PaymentMethod } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsEnum,
   IsISO8601,
   IsOptional,
   IsString,
@@ -49,6 +51,15 @@ export class CreateBillDto {
   @ValidateIf((_, value) => value !== undefined)
   @IsCurrencyCode()
   currency?: string;
+
+  @ApiPropertyOptional({
+    enum: PaymentMethod,
+    description:
+      'Optional per-bill override. Resolved at approve time as bill > vendor.defaultPaymentMethod > ACH.',
+  })
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  paymentMethod?: PaymentMethod;
 
   @ApiProperty({ format: 'date-time', example: '2026-05-01T00:00:00.000Z' })
   @IsISO8601()

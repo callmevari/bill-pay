@@ -146,6 +146,7 @@ export class BillsService {
             description: dto.description ?? null,
             amount: new Prisma.Decimal(dto.amount),
             currency: dto.currency ?? 'USD',
+            paymentMethod: dto.paymentMethod ?? null,
             invoiceDate,
             dueDate,
             lineItems:
@@ -209,6 +210,7 @@ export class BillsService {
     if (dto.invoiceDate !== undefined)
       data.invoiceDate = new Date(dto.invoiceDate);
     if (dto.dueDate !== undefined) data.dueDate = new Date(dto.dueDate);
+    if (dto.paymentMethod !== undefined) data.paymentMethod = dto.paymentMethod;
 
     if (dto.invoiceDate !== undefined || dto.dueDate !== undefined) {
       const nextInvoiceDate =
@@ -429,10 +431,15 @@ export class BillsService {
 
       // After CAS, read the bill state so vendor lookup and Payment
       // creation see the post-transition view (covers a concurrent PATCH
-      // changing amount/currency before the CAS).
+      // changing amount/currency/paymentMethod before the CAS).
       const updatedBill = await tx.bill.findUniqueOrThrow({
         where: { id },
-        select: { vendorId: true, amount: true, currency: true },
+        select: {
+          vendorId: true,
+          amount: true,
+          currency: true,
+          paymentMethod: true,
+        },
       });
       const vendor = await tx.vendor.findUnique({
         where: { id: updatedBill.vendorId },
@@ -444,7 +451,22 @@ export class BillsService {
           message: 'Vendor not found.',
         });
       }
-      const paymentMethod = vendor.defaultPaymentMethod ?? PaymentMethod.ACH;
+      // Payment-method precedence: per-bill override > vendor default >
+      // ACH fallback. Source is recorded on the `payment.created`
+      // activity row so the UI can explain why a particular method was
+      // chosen ("Stripe invoice paid by WIRE for this bill only").
+      let paymentMethod: PaymentMethod;
+      let methodSource: 'bill' | 'vendor' | 'fallback';
+      if (updatedBill.paymentMethod !== null) {
+        paymentMethod = updatedBill.paymentMethod;
+        methodSource = 'bill';
+      } else if (vendor.defaultPaymentMethod !== null) {
+        paymentMethod = vendor.defaultPaymentMethod;
+        methodSource = 'vendor';
+      } else {
+        paymentMethod = PaymentMethod.ACH;
+        methodSource = 'fallback';
+      }
 
       // MVP invariant: exactly one Approval row per bill (created at
       // `submitForApproval`). See `docs/backend.md → Approval`.
@@ -485,7 +507,11 @@ export class BillsService {
           actorRole: actor.role,
           action: 'payment.created',
           toStatus: PaymentStatus.UNSCHEDULED,
-          metadata: { method: paymentMethod, billId: id },
+          metadata: {
+            method: paymentMethod,
+            methodSource,
+            billId: id,
+          },
           createdAt: new Date(),
         },
       });
