@@ -197,16 +197,13 @@ export function BulkToolbar({
     return item.id;
   };
 
-  // After every bulk run, open the modal with the envelope, invalidate
-  // happens inside the hook's `onSettled`, and the selection is cleared
-  // so a second action does not fire against rows the user no longer
-  // expects to be selected.
-  // Surface a sticky toast alongside the modal so partial-failure
-  // outcomes (the common case for bulk runs against mixed selections)
-  // are visible even if the user dismisses or misses the dialog. The
-  // toast carries a "Details" action that re-opens the modal with the
-  // same per-item envelope, so a click-outside on the dialog is not a
-  // one-way trip.
+  // After every bulk run, fire a summary toast carrying the per-item
+  // envelope, invalidate happens inside the hook's `onSettled`, and the
+  // selection is cleared so a second action does not fire against rows
+  // the user no longer expects to be selected. The toast's "Details"
+  // action is the only path that opens the result modal — auto-opening
+  // pulled focus before the user could read the toast (see
+  // `docs/frontend.md → Per-item result modal`).
   const toastSummary = (
     title: string,
     payload: {
