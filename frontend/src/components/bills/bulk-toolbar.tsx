@@ -199,30 +199,43 @@ export function BulkToolbar({
   // Surface a sticky toast alongside the modal so partial-failure
   // outcomes (the common case for bulk runs against mixed selections)
   // are visible even if the user dismisses or misses the dialog. The
-  // modal still carries the per-item detail; the toast just shouts the
-  // summary so the action does not feel ghost-fired.
-  const toastSummary = (title: string, summary: {
-    total: number;
-    succeeded: number;
-    failed: number;
-  }): void => {
+  // toast carries a "Details" action that re-opens the modal with the
+  // same per-item envelope, so a click-outside on the dialog is not a
+  // one-way trip.
+  const toastSummary = (
+    title: string,
+    payload: {
+      title: string;
+      response: BulkResponse<BulkResultEntity>;
+      resolveLabel: (item: { id: string; data?: BulkResultEntity }) => string;
+    },
+  ): void => {
+    const summary = payload.response.summary;
     if (summary.total === 0) return;
     const msg = `${summary.succeeded} of ${summary.total} succeeded · ${summary.failed} failed.`;
-    if (summary.failed === 0) toast.success(`${title}: ${msg}`);
-    else if (summary.succeeded === 0) toast.error(`${title}: ${msg}`);
-    else toast.warning(`${title}: ${msg}`);
+    const options = {
+      duration: 8000,
+      action: {
+        label: 'Details',
+        onClick: () => setResult(payload),
+      },
+    };
+    if (summary.failed === 0) toast.success(`${title}: ${msg}`, options);
+    else if (summary.succeeded === 0) toast.error(`${title}: ${msg}`, options);
+    else toast.warning(`${title}: ${msg}`, options);
   };
   const presentBills = (
     title: string,
     response: BulkResponse<Bill> | undefined,
   ): void => {
     if (!response) return;
-    setResult({
+    const payload = {
       title,
       response: response as BulkResponse<BulkResultEntity>,
       resolveLabel: resolveBillLabel,
-    });
-    toastSummary(title, response.summary);
+    };
+    setResult(payload);
+    toastSummary(title, payload);
     onClearSelection();
   };
   const presentPayments = (
@@ -230,12 +243,13 @@ export function BulkToolbar({
     response: BulkResponse<BillPayment> | undefined,
   ): void => {
     if (!response) return;
-    setResult({
+    const payload = {
       title,
       response: response as BulkResponse<BulkResultEntity>,
       resolveLabel: resolvePaymentLabel,
-    });
-    toastSummary(title, response.summary);
+    };
+    setResult(payload);
+    toastSummary(title, payload);
     onClearSelection();
   };
 
