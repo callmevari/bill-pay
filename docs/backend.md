@@ -61,6 +61,10 @@ ARCHIVED (also reachable from any non-PAID state)
 
 `REJECTED` and `ARCHIVED` are terminal. `PAID` is terminal. Hard-delete is allowed only in `DRAFT`.
 
+#### Post-payment field lock on the Bill
+
+Once a non-cancelled `Payment` row exists for a Bill, `PATCH /bills/:id` rejects edits to `amount`, `currency`, and `paymentMethod` with **`409 BILL_FIELD_LOCKED_POST_PAYMENT`** carrying `details: { lockedFields: [...], paymentStatus }`. The operator already committed to a number and a rail; allowing the bill column to drift from the live Payment would silently desync the two — the same kind of bug the `paymentMethod` lock prevents. `description`, `dueDate`, and `invoiceDate` stay editable on purpose: memo edits, tracking-date updates, and typo-fixes don't affect the payment.
+
 #### Payment-method resolution on approve
 
 `Bill.paymentMethod` is a nullable per-bill override that wins over the vendor default at approve time. The service resolves `Payment.method` as **`bill.paymentMethod ?? vendor.defaultPaymentMethod ?? 'ACH'`** and records which source won under `metadata.methodSource` (`"bill" | "vendor" | "fallback"`) on the `payment.created` activity row. Storing the source — not just the resolved value — lets the UI explain "this Stripe invoice was wired because the bill said so" rather than just showing a method that doesn't match the vendor's usual default. The override is editable while the bill is non-terminal (it lives on the Bill, not the Payment), so finance can change it up until approve runs; once the Payment exists, its method is the source of truth and is mutated only through the Payment lifecycle.

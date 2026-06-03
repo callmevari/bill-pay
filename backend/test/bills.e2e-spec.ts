@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import {
   BillStatus,
   PaymentMethod,
+  PaymentStatus,
   Prisma,
   PrismaClient,
 } from '@prisma/client';
@@ -312,5 +313,78 @@ describe('Bills (e2e)', () => {
     };
     expect(body.error.code).toBe('BILL_NOT_EDITABLE');
     expect(body.error.details.status).toBe('PAID');
+  });
+
+  it('PATCH /bills/:id rejects amount/currency edits once a non-cancelled Payment exists', async () => {
+    const created = await prisma.bill.create({
+      data: {
+        invoiceNumber: 'INV-LOCKED-1',
+        vendorId: actors.vendor.id,
+        createdById: actors.admin.id,
+        status: BillStatus.APPROVED,
+        amount: new Prisma.Decimal('500.00'),
+        currency: 'USD',
+        paymentMethod: PaymentMethod.ACH,
+        invoiceDate: new Date('2026-05-01T00:00:00.000Z'),
+        dueDate: new Date('2026-05-31T00:00:00.000Z'),
+        payment: {
+          create: {
+            status: PaymentStatus.UNSCHEDULED,
+            method: PaymentMethod.ACH,
+            amount: new Prisma.Decimal('500.00'),
+            currency: 'USD',
+          },
+        },
+      },
+    });
+
+    // Amount edit blocked.
+    const amountRes = await request(app.getHttpServer())
+      .patch(`/api/v1/bills/${created.id}`)
+      .set('x-user-id', actors.admin.id)
+      .send({ amount: '999.99' });
+    expect(amountRes.status).toBe(409);
+    const amountBody = amountRes.body as {
+      error: { code: string; details: { lockedFields: string[] } };
+    };
+    expect(amountBody.error.code).toBe('BILL_FIELD_LOCKED_POST_PAYMENT');
+    expect(amountBody.error.details.lockedFields).toEqual(['amount']);
+
+    // Currency edit blocked.
+    const currencyRes = await request(app.getHttpServer())
+      .patch(`/api/v1/bills/${created.id}`)
+      .set('x-user-id', actors.admin.id)
+      .send({ currency: 'EUR' });
+    expect(currencyRes.status).toBe(409);
+
+    // Multi-field attempt lists every locked field.
+    const multiRes = await request(app.getHttpServer())
+      .patch(`/api/v1/bills/${created.id}`)
+      .set('x-user-id', actors.admin.id)
+      .send({ amount: '999.99', currency: 'EUR', description: 'memo' });
+    expect(multiRes.status).toBe(409);
+    expect(
+      (
+        multiRes.body as {
+          error: { details: { lockedFields: string[] } };
+        }
+      ).error.details.lockedFields,
+    ).toEqual(['amount', 'currency']);
+
+    // Description + dueDate + invoiceDate stay editable post-payment.
+    const descRes = await request(app.getHttpServer())
+      .patch(`/api/v1/bills/${created.id}`)
+      .set('x-user-id', actors.admin.id)
+      .send({
+        description: 'memo after approve',
+        dueDate: '2026-06-30T00:00:00.000Z',
+        invoiceDate: '2026-05-02T00:00:00.000Z',
+      });
+    expect(descRes.status).toBe(200);
+    const after = await prisma.bill.findUniqueOrThrow({
+      where: { id: created.id },
+    });
+    expect(after.description).toBe('memo after approve');
+    expect(after.amount.toFixed(2)).toBe('500.00');
   });
 });

@@ -20,16 +20,20 @@ body:json {
 docs {
   Admin only. PATCH on a bill in PAID/REJECTED/ARCHIVED returns
   409 BILL_NOT_EDITABLE with `details.status`. Sending `null` on
-  required-non-null fields (amount/currency/invoiceDate/dueDate) returns
-  400 VALIDATION_ERROR.
+  required-non-null fields (amount/currency/invoiceDate/dueDate)
+  returns 400 VALIDATION_ERROR.
 
-  `paymentMethod` is consulted at approve time only. Editing it while
-  the bill is DRAFT or PENDING_APPROVAL changes which rail the Payment
-  is created with on approve. Editing it AFTER approve updates the
-  bill column but does NOT affect the live Payment.method (which is
-  the source of truth from approve onward); the UI locks the field at
-  that point. Send `null` to clear the override and fall back to the
-  vendor default. Example body lines:
+  Post-payment field lock: once a non-cancelled Payment row exists for
+  the bill, the financial fields are frozen because editing them would
+  drift from the Payment row. Attempting `amount`, `currency`, or
+  `paymentMethod` returns
+      409 BILL_FIELD_LOCKED_POST_PAYMENT
+      details: { lockedFields: [...], paymentStatus }
+  `description`, `dueDate`, and `invoiceDate` stay editable — memo /
+  tracking / typo-correction don't affect the payment.
+
+  Pre-approve, `paymentMethod` is consulted at approve time only. Send
+  a method value to override the vendor default, or `null` to clear:
       "paymentMethod": "WIRE"
       "paymentMethod": null
 }

@@ -116,6 +116,7 @@ describe('BillsService', () => {
           id: 'b1',
           status,
           lineItems: [],
+          payment: null,
         });
         await expect(
           service.update('b1', { amount: '100.00' }, actor),
@@ -130,10 +131,25 @@ describe('BillsService', () => {
         invoiceDate: new Date('2026-06-01T00:00:00.000Z'),
         dueDate: new Date('2026-06-30T00:00:00.000Z'),
         lineItems: [],
+        payment: null,
       });
       await expect(
         service.update('b1', { dueDate: '2026-05-01T00:00:00.000Z' }, actor),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('throws 409 BILL_FIELD_LOCKED_POST_PAYMENT when amount changes while a non-cancelled Payment exists', async () => {
+      prisma.bill.findUnique.mockResolvedValue({
+        id: 'b1',
+        status: BillStatus.APPROVED,
+        invoiceDate: new Date('2026-06-01T00:00:00.000Z'),
+        dueDate: new Date('2026-06-30T00:00:00.000Z'),
+        lineItems: [],
+        payment: { status: 'UNSCHEDULED' },
+      });
+      await expect(
+        service.update('b1', { amount: '999.99' }, actor),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 

@@ -203,6 +203,40 @@ export class BillsService {
   ): Promise<BillResponseDto> {
     const current = await this.ensureEditable(id);
 
+    // Post-payment lock on financial fields. Once the linked Payment
+    // exists in a non-cancelled state the operator already committed
+    // to a number; editing the bill's `amount` / `currency` here would
+    // create a silent drift with `Payment.amount` / `Payment.currency`
+    // that we have no way to reconcile. `paymentMethod` is already
+    // locked by the FE form but we belt-and-brace it here so a direct
+    // PATCH (Bruno, curl) cannot bypass the rule either.
+    // `description`, `dueDate`, and `invoiceDate` stay editable —
+    // memo and tracking fields don't affect the payment, and
+    // `invoiceDate` is honest metadata an operator may need to correct
+    // for a typo after the fact.
+    const POST_PAYMENT_LOCKED_FIELDS = [
+      'amount',
+      'currency',
+      'paymentMethod',
+    ] as const;
+    const hasActivePayment =
+      current.payment !== null && current.payment.status !== 'CANCELED';
+    if (hasActivePayment) {
+      const attemptedLocked = POST_PAYMENT_LOCKED_FIELDS.filter(
+        (field) => dto[field] !== undefined,
+      );
+      if (attemptedLocked.length > 0) {
+        throw new ConflictException({
+          code: ErrorCode.BILL_FIELD_LOCKED_POST_PAYMENT,
+          message: `Cannot edit ${attemptedLocked.join(', ')} on a bill whose Payment already exists.`,
+          details: {
+            lockedFields: attemptedLocked,
+            paymentStatus: current.payment?.status,
+          },
+        });
+      }
+    }
+
     const data: Prisma.BillUpdateInput = {};
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.amount !== undefined) data.amount = new Prisma.Decimal(dto.amount);

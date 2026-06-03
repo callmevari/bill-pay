@@ -185,17 +185,24 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
   const showError = (field: keyof FieldErrors): boolean =>
     submitted || touched.has(field);
 
-  // `bill.paymentMethod` is consulted exactly once — at approve time,
-  // when the linked Payment is created. Once the bill leaves
-  // DRAFT / PENDING_APPROVAL the Payment row exists (or the bill is
-  // terminal), and Payment.method is the source of truth from then on.
-  // Editing the bill field afterwards would not affect any live
-  // Payment, so the Select is locked.
-  const paymentMethodLocked =
+  // Post-payment field lock. Once a non-cancelled Payment row exists
+  // for the bill, the operator already committed to a number and a
+  // rail; editing amount / currency / paymentMethod here would silently
+  // drift from the Payment row. The backend enforces the same rule
+  // with `BILL_FIELD_LOCKED_POST_PAYMENT` so a direct PATCH cannot
+  // bypass it either. `paymentMethod` is captured separately because
+  // the field lives behind a Tooltip + Select that need their own
+  // disabled flag.
+  const hasActivePayment =
     mode === 'edit' &&
     bill !== undefined &&
-    bill.status !== 'DRAFT' &&
-    bill.status !== 'PENDING_APPROVAL';
+    bill.payment !== null &&
+    bill.payment !== undefined &&
+    bill.payment.status !== 'CANCELED';
+  const paymentMethodLocked = hasActivePayment;
+  const financialFieldsLocked = hasActivePayment;
+  const lockedFieldHint =
+    'A Payment row already exists. This field cannot be changed.';
 
   // Keep the form in sync if the underlying bill ref changes (rare in
   // practice — the edit route loads once — but cheap insurance against a
@@ -399,38 +406,77 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
           label="Amount"
           error={showError('amount') ? errors.amount : undefined}
           required
+          hint={financialFieldsLocked ? lockedFieldHint : undefined}
         >
-          <Input
-            id="bill-amount"
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            min={0}
-            value={state.amount}
-            onChange={(event) => {
-              updateField('amount', event.target.value);
-              markTouched('amount');
-            }}
-            placeholder="0.00"
-          />
+          {financialFieldsLocked ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <Input id="bill-amount" type="text" value={state.amount} disabled />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>{lockedFieldHint}</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Input
+              id="bill-amount"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min={0}
+              value={state.amount}
+              onChange={(event) => {
+                updateField('amount', event.target.value);
+                markTouched('amount');
+              }}
+              placeholder="0.00"
+            />
+          )}
         </Field>
 
-        <Field id="bill-currency" label="Currency" required>
-          <Select
-            value={state.currency}
-            onValueChange={(next) => updateField('currency', next as SupportedCurrency)}
-          >
-            <SelectTrigger id="bill-currency">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SUPPORTED_CURRENCIES.map((code) => (
-                <SelectItem key={code} value={code}>
-                  {code}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <Field
+          id="bill-currency"
+          label="Currency"
+          required
+          hint={financialFieldsLocked ? lockedFieldHint : undefined}
+        >
+          {financialFieldsLocked ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <Select value={state.currency} disabled>
+                    <SelectTrigger id="bill-currency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SUPPORTED_CURRENCIES.map((code) => (
+                        <SelectItem key={code} value={code}>
+                          {code}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>{lockedFieldHint}</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Select
+              value={state.currency}
+              onValueChange={(next) => updateField('currency', next as SupportedCurrency)}
+            >
+              <SelectTrigger id="bill-currency">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SUPPORTED_CURRENCIES.map((code) => (
+                  <SelectItem key={code} value={code}>
+                    {code}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </Field>
 
         <Field
