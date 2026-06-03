@@ -84,6 +84,10 @@ COPY --from=prod-deps /workspace/backend/node_modules /workspace/backend/node_mo
 COPY --from=build /workspace/backend/dist ./dist
 COPY --from=build /workspace/backend/package.json ./package.json
 COPY --from=build /workspace/backend/prisma ./prisma
+# `prisma db seed` reads the seed command from `prisma.config.ts` (the
+# Prisma 6 replacement for the `prisma.seed` field in `package.json`).
+# Without this file the CLI silently exits 0 with no work done.
+COPY --from=build /workspace/backend/prisma.config.ts ./prisma.config.ts
 
 EXPOSE 3001
 
