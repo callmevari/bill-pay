@@ -280,21 +280,33 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
 
     if (!bill) return;
 
+    // Build the PATCH payload defensively. The financial fields
+    // (amount / currency / paymentMethod) are locked once a non-
+    // cancelled Payment exists; including them in the body — even
+    // unchanged — trips the backend's BILL_FIELD_LOCKED_POST_PAYMENT
+    // guard. Omit them in that case so PATCH carries only the fields
+    // the user can actually edit.
+    const input: Parameters<
+      typeof updateMutation.mutateAsync
+    >[0]['input'] = {
+      description: state.description.trim() === '' ? null : state.description.trim(),
+      invoiceDate: toWireDate(state.invoiceDate),
+      dueDate: toWireDate(state.dueDate),
+    };
+    if (!financialFieldsLocked) {
+      input.amount = toWireAmount(state.amount);
+      input.currency = state.currency;
+      // PATCH semantics: `null` clears an existing override; a method
+      // value pins it. We always send one of the two so submitting
+      // "Use vendor default" clears a previously-set override.
+      input.paymentMethod =
+        state.paymentMethod === VENDOR_DEFAULT_METHOD ? null : state.paymentMethod;
+    }
+
     try {
       const updated = await updateMutation.mutateAsync({
         billId: bill.id,
-        input: {
-          description: state.description.trim() === '' ? null : state.description.trim(),
-          amount: toWireAmount(state.amount),
-          currency: state.currency,
-          // PATCH semantics: `null` clears an existing override; a method
-          // value pins it. We always send one of the two so submitting
-          // "Use vendor default" clears a previously-set override.
-          paymentMethod:
-            state.paymentMethod === VENDOR_DEFAULT_METHOD ? null : state.paymentMethod,
-          invoiceDate: toWireDate(state.invoiceDate),
-          dueDate: toWireDate(state.dueDate),
-        },
+        input,
       });
       router.push(`/bills/${updated.id}`);
     } catch (error) {
