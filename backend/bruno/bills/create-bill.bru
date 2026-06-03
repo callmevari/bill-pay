@@ -40,6 +40,7 @@ docs {
   Optional per-bill `paymentMethod` override (ACH | WIRE | CHECK | CARD |
   OFF_PLATFORM). Add it to the body to override the vendor default for
   this bill only — resolved at approve time as
-  bill > vendor.defaultPaymentMethod > ACH. Example:
+  bill > vendor.defaultPaymentMethod (vendor default is required, so
+  the chain always terminates there). Example:
       "paymentMethod": "WIRE"
 }
