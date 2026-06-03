@@ -9,6 +9,14 @@ export function Toaster(props: ToasterProps): React.JSX.Element {
     <SonnerToaster
       theme={(resolvedTheme as ToasterProps['theme']) ?? 'system'}
       className="toaster group"
+      // 420px instead of Sonner's 356px default. The bulk-result summary
+      // toast carries a verb + counts + a Details action button; the
+      // shorter width pushed the action button off the right edge of
+      // the toaster container, which itself sits at `width: var(--width)`
+      // and clips its children. Widening the toaster fixes both the
+      // bulk toast and gives ordinary toasts a touch more room without
+      // looking oversized.
+      style={{ ['--width' as string]: '420px' }}
       toastOptions={{
         classNames: {
           toast:
