@@ -4,6 +4,7 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsISO8601,
   IsString,
 } from 'class-validator';
 
@@ -25,6 +26,19 @@ export class BulkPaymentIdsDto {
   @ArrayUnique({ message: 'ids must not contain duplicates.' })
   @IsString({ each: true })
   ids: string[];
+}
+
+// Bulk schedule applies the same `scheduledFor` date to every selected
+// payment. Per-item dates are out of scope: the bulk action is for
+// "schedule all of these for the same day".
+export class BulkSchedulePaymentsDto extends BulkPaymentIdsDto {
+  @ApiProperty({
+    format: 'date-time',
+    example: '2026-06-15T00:00:00.000Z',
+    description: 'ISO 8601 timestamp applied uniformly to every payment.',
+  })
+  @IsISO8601()
+  scheduledFor: string;
 }
 
 export class BulkPaymentsResponseDto extends BulkResponseDto<PaymentResponseDto> {}

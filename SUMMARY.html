@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Bill Pay — Project Summary</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --fg: #1a1a1a;
+      --fg-muted: #555;
+      --bg: #ffffff;
+      --bg-alt: #f6f7f9;
+      --border: #e3e6ea;
+      --accent: #00a6d5;
+      --accent-fg: #ffffff;
+      --code-bg: #f3f5f7;
+      --verify-border: #00a6d5;
+      --verify-bg: #f0fbff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg: #f1f1f1;
+        --fg-muted: #a8a8a8;
+        --bg: #161819;
+        --bg-alt: #1d1f21;
+        --border: #2c2f33;
+        --code-bg: #1f2125;
+        --verify-bg: #0d2530;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: var(--fg);
+      background: var(--bg);
+      font-size: 14.5px;
+      line-height: 1.5;
+    }
+    main {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 32px 28px 48px;
+    }
+    h1, h2 {
+      line-height: 1.2;
+      margin-top: 1.4em;
+      margin-bottom: 0.3em;
+      font-weight: 600;
+    }
+    h1 { font-size: 1.8em; margin-top: 0; }
+    h2 { font-size: 1.2em; padding-bottom: 0.18em; border-bottom: 1px solid var(--border); }
+    p, ul, ol { margin: 0.4em 0; }
+    ul, ol { padding-left: 1.25em; }
+    li { margin: 0.15em 0; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+      font-size: 0.85em;
+      background: var(--code-bg);
+      padding: 0.08em 0.3em;
+      border-radius: 4px;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 9px 11px;
+      overflow-x: auto;
+      font-size: 0.8em;
+      line-height: 1.4;
+    }
+    pre code { background: transparent; padding: 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.7em 0;
+      font-size: 0.87em;
+    }
+    th, td {
+      text-align: left;
+      padding: 6px 9px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th { background: var(--bg-alt); font-weight: 600; }
+    .verify {
+      border-left: 3px solid var(--verify-border);
+      background: var(--verify-bg);
+      padding: 7px 11px;
+      margin: 8px 0 14px;
+      border-radius: 0 4px 4px 0;
+      font-size: 0.88em;
+    }
+    .verify-label {
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      font-size: 0.72em;
+      text-transform: uppercase;
+      color: var(--accent);
+      display: block;
+      margin-bottom: 3px;
+    }
+    .cover {
+      background: linear-gradient(135deg, var(--accent) 0%, #0091bd 100%);
+      color: var(--accent-fg);
+      margin: -32px -28px 22px;
+      padding: 26px 28px 22px;
+    }
+    .cover h1, .cover p { color: var(--accent-fg); }
+    .cover .lede { font-size: 1.0em; opacity: 0.95; margin-top: 0.3em; }
+    .meta {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+      font-size: 0.8em;
+      margin-top: 10px;
+      opacity: 0.9;
+    }
+    @media print {
+      body { font-size: 10.5pt; }
+      .cover { background: var(--accent) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      h2 { page-break-after: avoid; }
+      pre, .verify, table { page-break-inside: avoid; }
+      main { max-width: none; padding: 0 20px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+
+<div class="cover">
+  <h1>Bill Pay — Project Summary</h1>
+  <p class="lede">Accounts payable workspace inspired by Ramp Bill Pay. NestJS + Prisma + Postgres on the backend; Next.js App Router + Tailwind + shadcn/ui + TanStack Query on the frontend. Full setup and per-module rationale live in the repo docs cited inline.</p>
+  <div class="meta">
+    <span><strong>Author:</strong> Diego Molina</span>
+    <span><strong>Repo:</strong> github.com/callmevari/bill-pay</span>
+  </div>
+</div>
+
+<h2>How to read this</h2>
+<p>Guided overview of what the project does, how it is structured, and the decisions worth surfacing. Setup, scripts, and the deep "why" of each module live in <code>README.md</code>, <code>docs/backend.md</code>, <code>docs/frontend.md</code>, and <code>docs/api-contract.md</code> — this document links to them rather than copying them. Each section ends with a <strong>How to verify</strong> block (an API call or a UI step) anchored in the repo.</p>
+<p>An HTTP collection ships in <code>backend/bruno/</code> (Bruno format, three role environments). The same endpoints work from any client — <code>curl</code>, Postman, Insomnia.</p>
+
+<h2>What ships</h2>
+<p>End-to-end, role-aware, with an append-only audit log on every transition. Full workflow list and scope-out decisions in <code>README.md → Workflows prioritized</code> and <code>README.md → Scope decisions</code>.</p>
+<ul>
+  <li>Vendor CRUD with delete guard against vendors-with-bills.</li>
+  <li>Bill authoring with line items, decimal-precise amounts, per-bill <code>paymentMethod</code> override.</li>
+  <li>Submit → approve / reject (Payment row created on approve).</li>
+  <li>Payment lifecycle: schedule, unschedule, release, mark-as-paid (incl. OFF_PLATFORM from UNSCHEDULED), retry, cancel.</li>
+  <li>Bills index — tabs × filters × column visibility × server-side sort + pagination × CSV export of the current view.</li>
+  <li>Bulk actions with role + tab + per-status gating; result modal opened from a summary toast.</li>
+  <li>Activity timeline on every bill with cascade-aware metadata badges.</li>
+</ul>
+<div class="verify">
+  <span class="verify-label">How to verify</span>
+  Follow the 8-step <em>Suggested walkthrough</em> in <code>README.md</code>; every flow above is exercised end-to-end.
+</div>
+
+<h2>Architecture decisions worth flagging</h2>
+<p>Four calls that shape the system. Full rationale + tradeoffs in <code>README.md → Architecture + data model decisions</code> and <code>docs/backend.md</code>.</p>
+<ul>
+  <li><strong>Bill and Payment are separate lifecycles.</strong> Approve creates the Payment in UNSCHEDULED; the two state machines run side-by-side. Exactly one Payment per Bill — cancel cascade-archives the Bill so a CANCELED payment never leaves a stuck APPROVED bill.</li>
+  <li><strong>Post-payment field lock.</strong> Once a non-cancelled Payment exists, <code>amount</code> / <code>currency</code> / <code>paymentMethod</code> on the Bill freeze (<code>409 BILL_FIELD_LOCKED_POST_PAYMENT</code>). Memo / dates stay editable.</li>
+  <li><strong><code>bill.amount</code> may diverge from <code>sum(lineItems.total)</code> by design.</strong> Real AP invoices carry tax, fees, shipping outside the line items; <code>bill.amount</code> is the source of truth and the detail page surfaces the divergence in amber.</li>
+  <li><strong>No silent ACH fallback.</strong> Vendor <code>defaultPaymentMethod</code> is NOT NULL at the schema level; precedence is <code>bill.paymentMethod ?? vendor.defaultPaymentMethod</code> and the source is recorded under <code>metadata.methodSource</code> on the <code>payment.created</code> activity row.</li>
+</ul>
+
+<h2>Lifecycles</h2>
+<pre><code>Bill:    DRAFT ──submit──&gt; PENDING_APPROVAL ──approve──&gt; APPROVED
+                                              └─reject──&gt; REJECTED
+         APPROVED ─(payment.schedule)──&gt; SCHEDULED ─(payment.markPaid|release+mark)──&gt; PAID
+         APPROVED ─(payment.markPaid UNSCHEDULED, OFF_PLATFORM)─────────────────────&gt; PAID
+         any non-terminal ─(archive | payment.cancel cascade)──&gt; ARCHIVED
+         Terminal: PAID, REJECTED, ARCHIVED.
+
+Payment: UNSCHEDULED ──schedule──&gt; SCHEDULED ──release──&gt; INITIATED ──markPaid──&gt; PAID
+         UNSCHEDULED ──markPaid (OFF_PLATFORM)────────────────────────────────────&gt; PAID
+         FAILED ──retry──&gt; SCHEDULED
+         {UNSCHEDULED|SCHEDULED|INITIATED|FAILED} ──cancel──&gt; CANCELED  (+ Bill→ARCHIVED)
+         Terminal: PAID, CANCELED.</code></pre>
+<div class="verify">
+  <span class="verify-label">How to verify</span>
+  Create + submit + approve + schedule + release + mark-paid on a single bill from the UI; the activity timeline shows every transition with actor + role + metadata. The full state-machine tests live under <code>backend/test/bills-lifecycle.e2e-spec.ts</code> and <code>backend/test/payments-lifecycle.e2e-spec.ts</code>.
+</div>
+
+<h2>Concurrency — Prisma transactions + CAS</h2>
+<p>Every state-changing service method opens a <code>prisma.$transaction</code> that reads-current → guards status → writes the row → writes the activity row. Two consequences fall out of this shape:</p>
+<ol>
+  <li><strong>The activity row exists exactly when the parent write committed.</strong> Audit log can never disagree with entity state — both rows commit together or neither does.</li>
+  <li><strong>Concurrent transitions are caught.</strong> Two simultaneous approve calls both read the same PENDING state. The first commits; the second's status guard runs against the now-APPROVED row inside its own transaction and throws <code>409 BILL_INVALID_TRANSITION</code> — no silent overwrite.</li>
+</ol>
+<p>Cascades are atomic too: the payment cancel + bill archive + both activity rows all commit together in <code>backend/src/payments/payments.service.ts</code>.</p>
+<div class="verify">
+  <span class="verify-label">How to verify</span>
+  Open two browser tabs as Admin, navigate both to the same DRAFT bill, hit <strong>Submit for approval</strong> in quick succession. One returns 200, the other surfaces a <code>BILL_INVALID_TRANSITION</code> toast.
+</div>
+
+<h2>Bulk operations</h2>
+<p>Every action exposed by the bulk toolbar maps 1:1 to a native bulk endpoint on the backend — both bill actions (<code>approve</code>, <code>archive</code>, <code>edit</code>, <code>submit-for-approval</code>, <code>reject</code>) and payment actions (<code>release</code>, <code>mark-as-paid</code>, <code>cancel</code>, <code>schedule</code>, <code>retry</code>). The frontend hooks are thin <code>apiFetch</code> wrappers; there is no client-side fan-out.</p>
+<p>Server-side, each bulk endpoint delegates to a shared <code>runBulk</code> helper (<code>backend/src/common/bulk/bulk-runner.ts</code>) that loops the input ids, invokes the same single-item service method per id inside its own <code>prisma.$transaction</code>, and shapes a <code>{ results, summary }</code> envelope. Two choices worth flagging:</p>
+<ul>
+  <li><strong>Sequential, not <code>Promise.all</code>.</strong> Deterministic activity-log ordering matters for an audit trail.</li>
+  <li><strong>Per-item transaction.</strong> A failing row aborts only its transaction; siblings keep going. HTTP status is always 200; partial failures appear inline.</li>
+  <li><strong>Delegates to the single-item service method.</strong> The state machine is implemented once. A behavioural change in the lifecycle is automatically reflected in bulk.</li>
+</ul>
+<div class="verify">
+  <span class="verify-label">How to verify</span>
+  On the bills index, select a mix of DRAFT and PENDING_APPROVAL rows, hit <strong>Approve</strong>. The summary toast says "X of Y succeeded · Z failed"; <strong>Details</strong> opens the per-item modal.
+</div>
+
+<h2>Backend cheatsheet</h2>
+<p>NestJS layout — controllers thin, services own business logic, Prisma at the persistence boundary.</p>
+<table>
+  <thead><tr><th>Topic</th><th>Where to point</th></tr></thead>
+  <tbody>
+    <tr><td>Data model + wire conventions</td><td><code>backend/prisma/schema.prisma</code></td></tr>
+    <tr><td>Bill editable guard + approve flow (method resolution + activity log)</td><td><code>backend/src/bills/bills.service.ts</code></td></tr>
+    <tr><td>Payment state machine + cancel cascade-archive</td><td><code>backend/src/payments/payments.service.ts</code></td></tr>
+    <tr><td>Bulk runner (single source of truth for the envelope)</td><td><code>backend/src/common/bulk/bulk-runner.ts</code></td></tr>
+    <tr><td>Stable error codes (the UI branches on these)</td><td><code>backend/src/common/errors/error-codes.ts</code></td></tr>
+    <tr><td>Global exception filter (always JSON, always the envelope)</td><td><code>backend/src/common/errors/all-exceptions.filter.ts</code></td></tr>
+    <tr><td>Role guard + permission matrix</td><td><code>backend/src/auth/</code>, <code>docs/api-contract.md → Permission matrix</code></td></tr>
+    <tr><td>CSV export with the same filters as <code>GET /bills</code></td><td><code>backend/src/exports/</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Frontend cheatsheet</h2>
+<p>Next.js App Router. TanStack Query for server state; controlled TanStack Table for the bills grid.</p>
+<table>
+  <thead><tr><th>Topic</th><th>Where to point</th></tr></thead>
+  <tbody>
+    <tr><td>API client + error envelope handling (spec next to it)</td><td><code>frontend/src/lib/api.ts</code></td></tr>
+    <tr><td>Role context + <code>useCan</code></td><td><code>frontend/src/hooks/use-can.ts</code>, <code>frontend/src/lib/roles.ts</code></td></tr>
+    <tr><td>Bills index (tabs × filters × selection × bulk toolbar slot)</td><td><code>frontend/src/app/bills-page.tsx</code></td></tr>
+    <tr><td>Bulk toolbar (role + tab + per-status gating, error-wrapped handlers)</td><td><code>frontend/src/components/bills/bulk-toolbar.tsx</code></td></tr>
+    <tr><td>Bill detail page + line-items reconciliation row</td><td><code>frontend/src/app/bills/[id]/bill-detail-page.tsx</code></td></tr>
+    <tr><td>Bill form (real-time validation, post-payment lock, date clamp)</td><td><code>frontend/src/components/bills/bill-form.tsx</code></td></tr>
+    <tr><td>Activity timeline + cascade metadata badges</td><td><code>frontend/src/components/activity/activity-timeline.tsx</code></td></tr>
+    <tr><td>CSV export (raw <code>Response</code> → Blob → download)</td><td><code>frontend/src/components/bills/export-menu.tsx</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Testing</h2>
+<p>Two layers with non-overlapping jobs (recipe in <code>CLAUDE.md → Testing</code> and <code>docs/backend.md → Testing strategy</code>):</p>
+<ul>
+  <li><strong>Unit</strong> (mocked Prisma) — decisions in code: parsers, guards, mappers, error translation. <code>pnpm --filter backend test</code> → 73 / 73. <code>pnpm --filter frontend test</code> → 10 / 10.</li>
+  <li><strong>E2E</strong> (real Postgres, isolated <code>test_e2e</code> schema, reset + reseed in <code>beforeEach</code>) — persistence, transactional atomicity, FK error translation, role guard end-to-end through HTTP. <code>pnpm --filter backend test:e2e</code> → 76 / 76.</li>
+</ul>
+
+<h2>Where to go from here</h2>
+<ul>
+  <li><strong>Run the stack:</strong> <code>README.md → Setup</code>. One command via Docker, or local Node + pnpm.</li>
+  <li><strong>Browse the data:</strong> <code>docker compose --profile studio up --build</code> exposes Prisma Studio at <code>:5555</code>.</li>
+  <li><strong>Hit the API:</strong> any HTTP client works. A Bruno collection is checked in at <code>backend/bruno/</code> (three role environments, every endpoint covered) if you'd rather not hand-roll requests.</li>
+  <li><strong>Permission matrix + error code table:</strong> <code>docs/api-contract.md</code>.</li>
+</ul>
+
+</main>
+</body>
+</html>

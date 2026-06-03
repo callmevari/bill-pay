@@ -84,4 +84,16 @@ export class BulkEditBillsDto extends BulkBillIdsDto {
   fields: BulkEditBillFieldsDto;
 }
 
+// Bulk reject applies the same `notes` string to every selected bill.
+// Per-item notes are out of scope: the UI would have to collect a
+// distinct reason per row, which negates the point of a bulk action.
+export class BulkRejectBillsDto extends BulkBillIdsDto {
+  @ApiPropertyOptional({
+    description: 'Optional notes applied uniformly to every rejected bill.',
+  })
+  @ValidateIf((_, value) => value !== undefined)
+  @IsString()
+  notes?: string;
+}
+
 export class BulkBillsResponseDto extends BulkResponseDto<BillResponseDto> {}

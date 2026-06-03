@@ -10,6 +10,7 @@ import {
   BulkBillIdsDto,
   BulkBillsResponseDto,
   BulkEditBillsDto,
+  BulkRejectBillsDto,
 } from './dto/bulk-bills.dto';
 
 // Mounted under a separate route prefix so the literal `bulk` segment
@@ -66,5 +67,35 @@ export class BillsBulkController {
     @CurrentUser() actor: AuthUser,
   ): Promise<BulkBillsResponseDto> {
     return this.bulk.edit(dto, actor);
+  }
+
+  @Post('submit-for-approval')
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Submit a batch of DRAFT bills for approval (Admin only). Per-item result.',
+  })
+  @ApiOkResponse({ type: BulkBillsResponseDto })
+  submitForApproval(
+    @Body() dto: BulkBillIdsDto,
+    @CurrentUser() actor: AuthUser,
+  ): Promise<BulkBillsResponseDto> {
+    return this.bulk.submitForApproval(dto, actor);
+  }
+
+  @Post('reject')
+  @Roles(Role.ADMIN, Role.APPROVER)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Reject a batch of PENDING_APPROVAL bills (Admin or Approver). Optional uniform notes.',
+  })
+  @ApiOkResponse({ type: BulkBillsResponseDto })
+  reject(
+    @Body() dto: BulkRejectBillsDto,
+    @CurrentUser() actor: AuthUser,
+  ): Promise<BulkBillsResponseDto> {
+    return this.bulk.reject(dto, actor);
   }
 }

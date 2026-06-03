@@ -8,6 +8,7 @@ import { Roles } from '../auth/roles.decorator';
 import {
   BulkPaymentIdsDto,
   BulkPaymentsResponseDto,
+  BulkSchedulePaymentsDto,
 } from './dto/bulk-payments.dto';
 import { PaymentsBulkService } from './payments-bulk.service';
 
@@ -62,5 +63,34 @@ export class PaymentsBulkController {
     @CurrentUser() actor: AuthUser,
   ): Promise<BulkPaymentsResponseDto> {
     return this.bulk.cancel(dto, actor);
+  }
+
+  @Post('schedule')
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Schedule a batch of UNSCHEDULED payments for the same date (Admin only). Per-item result.',
+  })
+  @ApiOkResponse({ type: BulkPaymentsResponseDto })
+  schedule(
+    @Body() dto: BulkSchedulePaymentsDto,
+    @CurrentUser() actor: AuthUser,
+  ): Promise<BulkPaymentsResponseDto> {
+    return this.bulk.schedule(dto, actor);
+  }
+
+  @Post('retry')
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Retry a batch of FAILED payments (Admin only). Per-item result.',
+  })
+  @ApiOkResponse({ type: BulkPaymentsResponseDto })
+  retry(
+    @Body() dto: BulkPaymentIdsDto,
+    @CurrentUser() actor: AuthUser,
+  ): Promise<BulkPaymentsResponseDto> {
+    return this.bulk.retry(dto, actor);
   }
 }
