@@ -131,10 +131,21 @@ interface FieldErrors {
   dueDate?: string;
 }
 
+// Mirrors `CreateBillDto.INVOICE_NUMBER_PATTERN` so the form catches
+// bad characters as the user types instead of bouncing them off the
+// backend on submit.
+const INVOICE_NUMBER_PATTERN = /^[\w\-._/# ()]+$/;
+
 function validate(state: FormState): FieldErrors {
   const errors: FieldErrors = {};
   if (!state.vendorId) errors.vendorId = 'Select a vendor.';
-  if (!state.invoiceNumber.trim()) errors.invoiceNumber = 'Invoice number is required.';
+  const trimmedInvoiceNumber = state.invoiceNumber.trim();
+  if (!trimmedInvoiceNumber) {
+    errors.invoiceNumber = 'Invoice number is required.';
+  } else if (!INVOICE_NUMBER_PATTERN.test(trimmedInvoiceNumber)) {
+    errors.invoiceNumber =
+      'Only letters, digits, spaces, and the characters - _ . / # ( ) are allowed.';
+  }
   if (!state.amount.trim()) {
     errors.amount = 'Amount is required.';
   } else {
@@ -158,6 +169,21 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
   const [state, setState] = useState<FormState>(() => initialState(bill));
   const [submitted, setSubmitted] = useState(false);
   const [serverError, setServerError] = useState<ApiError | null>(null);
+  // Track which fields the user has interacted with so per-field errors
+  // appear in real time without lighting up "Required" on every empty
+  // field the moment the page loads. After Submit, treat everything as
+  // touched so the bottom of the form does not surprise the user.
+  const [touched, setTouched] = useState<Set<keyof FieldErrors>>(() => new Set());
+  const markTouched = (field: keyof FieldErrors): void => {
+    setTouched((prev) => {
+      if (prev.has(field)) return prev;
+      const next = new Set(prev);
+      next.add(field);
+      return next;
+    });
+  };
+  const showError = (field: keyof FieldErrors): boolean =>
+    submitted || touched.has(field);
 
   // `bill.paymentMethod` is consulted exactly once — at approve time,
   // when the linked Payment is created. Once the bill leaves
@@ -300,14 +326,25 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
           role="alert"
           className="flex flex-col gap-1 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-foreground"
         >
-          <p className="font-medium text-destructive">{serverError.message}</p>
-          {validationMessages.length > 0 ? (
-            <ul className="list-disc pl-5 text-xs text-muted-foreground">
-              {validationMessages.map((message) => (
-                <li key={message}>{message}</li>
-              ))}
-            </ul>
-          ) : null}
+          {/* Avoid restating the same line twice when the backend's
+              `message` is a single class-validator failure that already
+              shows up in `validationMessages`. Multi-error responses
+              keep the title + bullet list shape. */}
+          {validationMessages.length === 1 &&
+          validationMessages[0] === serverError.message ? (
+            <p className="font-medium text-destructive">{serverError.message}</p>
+          ) : (
+            <>
+              <p className="font-medium text-destructive">{serverError.message}</p>
+              {validationMessages.length > 0 ? (
+                <ul className="list-disc pl-5 text-xs text-muted-foreground">
+                  {validationMessages.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
 
@@ -315,12 +352,15 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
         <Field
           id="bill-vendor"
           label="Vendor"
-          error={submitted ? errors.vendorId : undefined}
+          error={showError('vendorId') ? errors.vendorId : undefined}
           required
         >
           <VendorCombobox
             value={state.vendorId}
-            onChange={(next) => updateField('vendorId', next)}
+            onChange={(next) => {
+              updateField('vendorId', next);
+              markTouched('vendorId');
+            }}
             vendors={vendors}
           />
         </Field>
@@ -328,14 +368,17 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
         <Field
           id="bill-invoice-number"
           label="Invoice number"
-          error={submitted ? errors.invoiceNumber : undefined}
+          error={showError('invoiceNumber') ? errors.invoiceNumber : undefined}
           required
           hint={mode === 'edit' ? 'Locked after creation.' : undefined}
         >
           <Input
             id="bill-invoice-number"
             value={state.invoiceNumber}
-            onChange={(event) => updateField('invoiceNumber', event.target.value)}
+            onChange={(event) => {
+              updateField('invoiceNumber', event.target.value);
+              markTouched('invoiceNumber');
+            }}
             disabled={mode === 'edit'}
             placeholder="INV-2026-0001"
             autoComplete="off"
@@ -354,7 +397,7 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
         <Field
           id="bill-amount"
           label="Amount"
-          error={submitted ? errors.amount : undefined}
+          error={showError('amount') ? errors.amount : undefined}
           required
         >
           <Input
@@ -364,7 +407,10 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
             step="0.01"
             min={0}
             value={state.amount}
-            onChange={(event) => updateField('amount', event.target.value)}
+            onChange={(event) => {
+              updateField('amount', event.target.value);
+              markTouched('amount');
+            }}
             placeholder="0.00"
           />
         </Field>
@@ -447,28 +493,37 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
         <Field
           id="bill-invoice-date"
           label="Invoice date"
-          error={submitted ? errors.invoiceDate : undefined}
+          error={showError('invoiceDate') ? errors.invoiceDate : undefined}
           required
         >
           <Input
             id="bill-invoice-date"
             type="date"
             value={state.invoiceDate}
-            onChange={(event) => updateField('invoiceDate', event.target.value)}
+            onChange={(event) => {
+              updateField('invoiceDate', event.target.value);
+              markTouched('invoiceDate');
+              // Cross-field rule: also re-surface the dueDate error if
+              // the new invoiceDate makes the existing dueDate invalid.
+              if (touched.has('dueDate')) markTouched('dueDate');
+            }}
           />
         </Field>
 
         <Field
           id="bill-due-date"
           label="Due date"
-          error={submitted ? errors.dueDate : undefined}
+          error={showError('dueDate') ? errors.dueDate : undefined}
           required
         >
           <Input
             id="bill-due-date"
             type="date"
             value={state.dueDate}
-            onChange={(event) => updateField('dueDate', event.target.value)}
+            onChange={(event) => {
+              updateField('dueDate', event.target.value);
+              markTouched('dueDate');
+            }}
             min={state.invoiceDate || undefined}
           />
         </Field>
