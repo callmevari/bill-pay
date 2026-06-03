@@ -1144,6 +1144,20 @@ async function logPaymentTransition(
 }
 
 async function main(): Promise<void> {
+  // Idempotency guard. The seed is destructive — `wipe()` deletes every
+  // row — so a re-run inside an already-populated database would wipe
+  // the reviewer's in-flight work. We skip when users exist unless the
+  // operator explicitly opts in via `BILLPAY_SEED_FORCE=1`. This keeps
+  // `docker compose up` safe on a warm volume and still lets local devs
+  // refresh demo data on demand.
+  const existingUsers = await prisma.user.count();
+  if (existingUsers > 0 && process.env.BILLPAY_SEED_FORCE !== '1') {
+    logger.log(
+      `Seed skipped — database already contains ${existingUsers} user(s). Set BILLPAY_SEED_FORCE=1 to wipe and reseed.`,
+    );
+    return;
+  }
+
   logger.log('Wiping existing data...');
   await wipe();
   logger.log('Seeding users...');

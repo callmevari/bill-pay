@@ -6,6 +6,9 @@ import { defineConfig } from 'prisma/config';
 export default defineConfig({
   schema: 'prisma/schema.prisma',
   migrations: {
-    seed: 'ts-node --transpile-only prisma/seed.ts',
+    // tsx is a runtime dependency (single esbuild-backed binary) so the
+    // production Docker image can run the seed without pulling
+    // `ts-node` + the full TypeScript compiler into the runtime tree.
+    seed: 'tsx prisma/seed.ts',
   },
 });
