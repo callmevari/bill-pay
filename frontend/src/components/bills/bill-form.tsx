@@ -213,6 +213,15 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
 
   const errors = useMemo(() => validate(state), [state]);
   const hasErrors = Object.keys(errors).length > 0;
+  // Compare the current form state to the initial snapshot so the
+  // "Save changes" button stays disabled when nothing actually
+  // changed. Keeps a no-op PATCH out of the audit trail and prevents
+  // a misleading success toast on an unchanged form.
+  const initialFormState = useMemo(() => initialState(bill), [bill]);
+  const isDirty = useMemo(
+    () => JSON.stringify(state) !== JSON.stringify(initialFormState),
+    [state, initialFormState],
+  );
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   const lineItemSum = useMemo(
@@ -697,9 +706,22 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
         <Button type="button" variant="outline" size="sm" onClick={() => router.back()} disabled={isPending}>
           Cancel
         </Button>
-        <Button type="submit" size="sm" disabled={isPending}>
-          {mode === 'create' ? 'Create bill' : 'Save changes'}
-        </Button>
+        {mode === 'edit' && !isDirty ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={0}>
+                <Button type="submit" size="sm" disabled>
+                  Save changes
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>No changes to save.</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Button type="submit" size="sm" disabled={isPending}>
+            {mode === 'create' ? 'Create bill' : 'Save changes'}
+          </Button>
+        )}
       </div>
     </form>
   );
