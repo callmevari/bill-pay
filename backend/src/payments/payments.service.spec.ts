@@ -105,8 +105,9 @@ describe('PaymentsService', () => {
     });
   });
 
-  describe('markAsPaid (UNSCHEDULED|SCHEDULED|INITIATED -> PAID)', () => {
+  describe('markAsPaid (SCHEDULED|INITIATED -> PAID)', () => {
     it.each([
+      PaymentStatus.UNSCHEDULED,
       PaymentStatus.PAID,
       PaymentStatus.FAILED,
       PaymentStatus.CANCELED,

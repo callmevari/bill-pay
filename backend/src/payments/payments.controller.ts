@@ -17,7 +17,6 @@ import { PaginatedActivityResponseDto } from '../activity/dto/paginated-activity
 import type { AuthUser } from '../auth/auth-user';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
-import { ChangePaymentMethodDto } from './dto/change-payment-method.dto';
 import { PaginatedPaymentsResponseDto } from './dto/paginated-payments-response.dto';
 import { PaymentListQueryDto } from './dto/payment-list-query.dto';
 import { PaymentResponseDto } from './dto/payment-response.dto';
@@ -122,22 +121,6 @@ export class PaymentsController {
     @CurrentUser() actor: AuthUser,
   ): Promise<PaymentResponseDto> {
     return this.payments.cancel(id, actor);
-  }
-
-  @Post(':id/change-method')
-  @Roles(Role.ADMIN)
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary:
-      'Change the method of an UNSCHEDULED or SCHEDULED payment (Admin only). Logs payment.method_changed with {from, to}.',
-  })
-  @ApiOkResponse({ type: PaymentResponseDto })
-  changeMethod(
-    @Param('id') id: string,
-    @Body() dto: ChangePaymentMethodDto,
-    @CurrentUser() actor: AuthUser,
-  ): Promise<PaymentResponseDto> {
-    return this.payments.changeMethod(id, dto.method, actor);
   }
 
   @Post(':id/retry')

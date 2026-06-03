@@ -159,18 +159,17 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
   const [submitted, setSubmitted] = useState(false);
   const [serverError, setServerError] = useState<ApiError | null>(null);
 
-  // The bill's `paymentMethod` is only consulted at approve time — it
-  // is the default for the next Payment row. Once a Payment row exists
-  // in an active state (anything except CANCELED), editing the bill's
-  // `paymentMethod` no longer affects that live payment; the rail-level
-  // change has to happen via `POST /payments/:id/change-method` on the
-  // payment block. Lock the Select in that window so the form does not
-  // pretend to control something it doesn't.
-  const hasActivePayment =
-    bill?.payment !== null &&
-    bill?.payment !== undefined &&
-    bill.payment.status !== 'CANCELED';
-  const paymentMethodLocked = mode === 'edit' && hasActivePayment;
+  // `bill.paymentMethod` is consulted exactly once — at approve time,
+  // when the linked Payment is created. Once the bill leaves
+  // DRAFT / PENDING_APPROVAL the Payment row exists (or the bill is
+  // terminal), and Payment.method is the source of truth from then on.
+  // Editing the bill field afterwards would not affect any live
+  // Payment, so the Select is locked.
+  const paymentMethodLocked =
+    mode === 'edit' &&
+    bill !== undefined &&
+    bill.status !== 'DRAFT' &&
+    bill.status !== 'PENDING_APPROVAL';
 
   // Keep the form in sync if the underlying bill ref changes (rare in
   // practice — the edit route loads once — but cheap insurance against a
@@ -393,8 +392,8 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
           label="Payment method"
           hint={
             paymentMethodLocked
-              ? 'A payment row is already active. Use "Change method" on the payment block to switch the rail.'
-              : 'Overrides the vendor default when the next Payment is created on approve.'
+              ? 'A Payment row already exists; the method on the payment is the source of truth.'
+              : 'Overrides the vendor default when the Payment is created on approve.'
           }
         >
           {paymentMethodLocked ? (
@@ -419,10 +418,9 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
                 </div>
               </TooltipTrigger>
               <TooltipContent>
-                A payment row is already active. Use the &ldquo;Change
-                method&rdquo; action on the payment block (below) to
-                switch the rail — that updates the live payment
-                directly.
+                The payment was already created on approve. Its method
+                is shown on the payment block below and is the source
+                of truth from now on.
               </TooltipContent>
             </Tooltip>
           ) : (

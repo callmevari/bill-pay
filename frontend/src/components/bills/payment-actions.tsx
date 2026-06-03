@@ -6,25 +6,16 @@ import {
   CalendarClock,
   CalendarOff,
   CheckCircle2,
-  CreditCard,
   RotateCcw,
   Send,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   useCancelPaymentMutation,
-  useChangePaymentMethodMutation,
   useMarkPaymentPaidMutation,
   useReleasePaymentMutation,
   useRetryPaymentMutation,
@@ -38,15 +29,7 @@ import {
   paymentActionDisabledReason,
   type PaymentAction,
 } from '@/lib/payment-actions';
-import type { BillPayment, PaymentMethod } from '@/lib/api-types';
-
-const PAYMENT_METHODS: readonly PaymentMethod[] = [
-  'ACH',
-  'WIRE',
-  'CHECK',
-  'CARD',
-  'OFF_PLATFORM',
-] as const;
+import type { BillPayment } from '@/lib/api-types';
 
 interface PaymentActionsProps {
   payment: BillPayment;
@@ -65,7 +48,6 @@ export function PaymentActions({ payment }: PaymentActionsProps): React.JSX.Elem
   const canMark = useCan('payment.markAsPaid');
   const canCancel = useCan('payment.cancel');
   const canRetry = useCan('payment.retry');
-  const canChangeMethod = useCan('payment.changeMethod');
 
   const scheduleMutation = useSchedulePaymentMutation();
   const unscheduleMutation = useUnschedulePaymentMutation();
@@ -73,7 +55,6 @@ export function PaymentActions({ payment }: PaymentActionsProps): React.JSX.Elem
   const markPaidMutation = useMarkPaymentPaidMutation();
   const cancelMutation = useCancelPaymentMutation();
   const retryMutation = useRetryPaymentMutation();
-  const changeMethodMutation = useChangePaymentMethodMutation();
 
   const isPending =
     scheduleMutation.isPending ||
@@ -81,8 +62,7 @@ export function PaymentActions({ payment }: PaymentActionsProps): React.JSX.Elem
     releaseMutation.isPending ||
     markPaidMutation.isPending ||
     cancelMutation.isPending ||
-    retryMutation.isPending ||
-    changeMethodMutation.isPending;
+    retryMutation.isPending;
 
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduledFor, setScheduledFor] = useState(tomorrowYmd());
@@ -90,22 +70,16 @@ export function PaymentActions({ payment }: PaymentActionsProps): React.JSX.Elem
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
-  const [changeMethodOpen, setChangeMethodOpen] = useState(false);
-  const [nextMethod, setNextMethod] = useState<PaymentMethod>(payment.method);
 
   // Hide the entire cluster when no action is reachable for this
-  // payment's status (terminal or role-restricted), so the detail page
-  // doesn't render a wall of disabled buttons for PAID / CANCELED
-  // payments or for Viewer / Approver roles.
+  // payment's status (terminal or role-restricted).
   const reachable =
     (canSchedule && isPaymentActionAvailable('schedule', payment.status)) ||
     (canUnschedule && isPaymentActionAvailable('unschedule', payment.status)) ||
     (canRelease && isPaymentActionAvailable('release', payment.status)) ||
     (canMark && isPaymentActionAvailable('markAsPaid', payment.status)) ||
     (canCancel && isPaymentActionAvailable('cancel', payment.status)) ||
-    (canRetry && isPaymentActionAvailable('retry', payment.status)) ||
-    (canChangeMethod &&
-      isPaymentActionAvailable('changeMethod', payment.status));
+    (canRetry && isPaymentActionAvailable('retry', payment.status));
   if (!reachable) return <></>;
 
   return (
@@ -167,55 +141,6 @@ export function PaymentActions({ payment }: PaymentActionsProps): React.JSX.Elem
           variant="outline"
         />
       ) : null}
-      {canChangeMethod ? (
-        <ActionButton
-          action="changeMethod"
-          status={payment.status}
-          icon={<CreditCard className="size-4" />}
-          onClick={() => {
-            setNextMethod(payment.method);
-            setChangeMethodOpen(true);
-          }}
-          disabled={isPending}
-          variant="outline"
-        />
-      ) : null}
-
-      <ConfirmDialog
-        open={changeMethodOpen}
-        onOpenChange={setChangeMethodOpen}
-        title="Change payment method"
-        description="Switch the rail before the payment is initiated. Logged as payment.method_changed."
-        confirmLabel="Save method"
-        pending={changeMethodMutation.isPending}
-        onConfirm={async () => {
-          await changeMethodMutation.mutateAsync({
-            paymentId: payment.id,
-            method: nextMethod,
-          });
-          setChangeMethodOpen(false);
-        }}
-      >
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="change-method-select">Method</Label>
-          <Select
-            value={nextMethod}
-            onValueChange={(value) => setNextMethod(value as PaymentMethod)}
-          >
-            <SelectTrigger id="change-method-select">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PAYMENT_METHODS.map((method) => (
-                <SelectItem key={method} value={method}>
-                  {method}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </ConfirmDialog>
-
       <ConfirmDialog
         open={scheduleOpen}
         onOpenChange={setScheduleOpen}

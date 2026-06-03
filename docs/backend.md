@@ -99,7 +99,7 @@ UNSCHEDULED ──► SCHEDULED ──► INITIATED ──► PAID
 | `INITIATED`/`SCHEDULED` | `PAID` | `POST /payments/:id/mark-as-paid` | Set `paidAt`; bill → `PAID` |
 | `INITIATED` | `FAILED` | (simulated; reachable via retry-then-fail in seed only) | Set `failedAt`, `failureReason` |
 | `FAILED` | `SCHEDULED` | `POST /payments/:id/retry` | Clear `failedAt`/`failureReason`; restore `scheduledFor` |
-| `SCHEDULED`/`INITIATED`/`FAILED` | `CANCELED` | `POST /payments/:id/cancel` | Set `canceledAt`; bill returns to `APPROVED` (unpaid queue) |
+| `UNSCHEDULED`/`SCHEDULED`/`INITIATED`/`FAILED` | `CANCELED` | `POST /payments/:id/cancel` | Set `canceledAt`; **bill auto-archives** (`bill.archived` activity row with `metadata.triggeredBy: 'payment.cancel'`). The system creates exactly one Payment per Bill at approve time, so a canceled Payment leaves the Bill with no forward motion — archiving makes the dead-end honest in the audit trail. |
 
 `PAID` and `CANCELED` are terminal.
 

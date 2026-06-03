@@ -7,7 +7,6 @@ import {
 import {
   ActivityEntityType,
   BillStatus,
-  PaymentMethod,
   PaymentStatus,
   Prisma,
 } from '@prisma/client';
@@ -181,18 +180,10 @@ export class PaymentsService {
   async markAsPaid(id: string, actor: AuthUser): Promise<PaymentResponseDto> {
     const paidAt = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
-      // UNSCHEDULED is allowed too — covers the OFF_PLATFORM case where
-      // the payment was made externally (cash, check delivered in
-      // person) and the operator records it after the fact, without
-      // ever scheduling it through the system.
       const { fromStatus, payment } = await this.casPaymentTransition(
         tx,
         id,
-        [
-          PaymentStatus.UNSCHEDULED,
-          PaymentStatus.SCHEDULED,
-          PaymentStatus.INITIATED,
-        ],
+        [PaymentStatus.SCHEDULED, PaymentStatus.INITIATED],
         PaymentStatus.PAID,
         { paidAt },
       );
@@ -206,17 +197,11 @@ export class PaymentsService {
         PaymentStatus.PAID,
       );
 
-      // Bill propagation depends on where the payment came from. From
-      // SCHEDULED the bill moves SCHEDULED -> PAID; from UNSCHEDULED
-      // the bill jumps APPROVED -> PAID (it never reached SCHEDULED).
-      const billAllowedFrom =
-        fromStatus === PaymentStatus.UNSCHEDULED
-          ? [BillStatus.APPROVED]
-          : [BillStatus.SCHEDULED];
+      // Bill SCHEDULED -> PAID.
       await this.casBillFromPayment(
         tx,
         payment.billId,
-        billAllowedFrom,
+        [BillStatus.SCHEDULED],
         BillStatus.PAID,
         actor,
         'bill.paid',
@@ -233,6 +218,12 @@ export class PaymentsService {
       // UNSCHEDULED is allowed — operators routinely decide not to pay
       // an approved-but-unscheduled bill (vendor dispute, duplicate
       // invoice, internal cancellation) without ever scheduling it.
+      // The cancel cascades the bill to ARCHIVED in every case: the
+      // system creates exactly one Payment per Bill at approve time
+      // and there is no path to re-create it, so a canceled payment
+      // leaves the bill with no forward motion. Surfacing an APPROVED
+      // bill with a CANCELED payment row reads as a stuck workflow;
+      // archiving it makes the audit trail honest about the dead-end.
       const { fromStatus, payment } = await this.casPaymentTransition(
         tx,
         id,
@@ -255,81 +246,37 @@ export class PaymentsService {
         PaymentStatus.CANCELED,
       );
 
-      // Bill propagation: SCHEDULED -> APPROVED un-schedules the bill.
-      // From UNSCHEDULED the bill stays APPROVED (it never moved), so
-      // skip the cascade entirely. Every other origin (SCHEDULED,
-      // INITIATED, FAILED) means the bill is currently SCHEDULED and
-      // does need the cascade.
-      if (fromStatus !== PaymentStatus.UNSCHEDULED) {
-        await this.casBillFromPayment(
-          tx,
-          payment.billId,
-          [BillStatus.SCHEDULED],
-          BillStatus.APPROVED,
-          actor,
-          'bill.payment_canceled',
-        );
-      }
-
-      return tx.payment.findUniqueOrThrow({ where: { id } });
-    });
-    return toPaymentResponse(updated);
-  }
-
-  async changeMethod(
-    id: string,
-    method: PaymentMethod,
-    actor: AuthUser,
-  ): Promise<PaymentResponseDto> {
-    // The payment method is the rail (ACH / WIRE / CHECK / CARD /
-    // OFF_PLATFORM) — once the payment is actually moving (INITIATED /
-    // PAID / FAILED / CANCELED) the choice is locked because the
-    // operator already sent the funds (or the failure / cancel decided
-    // the rail). UNSCHEDULED and SCHEDULED are still amenable to
-    // method changes because nothing has been initiated yet.
-    const ALLOWED_FROM: PaymentStatus[] = [
-      PaymentStatus.UNSCHEDULED,
-      PaymentStatus.SCHEDULED,
-    ];
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const fresh = await tx.payment.findUnique({
-        where: { id },
-        select: { status: true, method: true },
+      // Cascade-archive the bill. The bill can currently be in any
+      // non-terminal state depending on where the payment was; cover
+      // every legal origin.
+      const fresh = await tx.bill.findUniqueOrThrow({
+        where: { id: payment.billId },
+        select: { status: true },
       });
-      if (!fresh) {
-        throw new NotFoundException({
-          code: ErrorCode.PAYMENT_NOT_FOUND,
-          message: 'Payment not found.',
+      const billAllowedFrom: BillStatus[] = [
+        BillStatus.APPROVED,
+        BillStatus.SCHEDULED,
+      ];
+      if (billAllowedFrom.includes(fresh.status)) {
+        await tx.bill.update({
+          where: { id: payment.billId },
+          data: { status: BillStatus.ARCHIVED, archivedAt: new Date() },
         });
-      }
-      if (!ALLOWED_FROM.includes(fresh.status)) {
-        throw new ConflictException({
-          code: ErrorCode.PAYMENT_INVALID_TRANSITION,
-          message: `Cannot change method on a payment in ${fresh.status}.`,
-          details: {
-            from: fresh.status,
-            allowedFrom: ALLOWED_FROM,
+        await tx.activityLog.create({
+          data: {
+            entityType: ActivityEntityType.BILL,
+            entityId: payment.billId,
+            actorId: actor.id,
+            actorRole: actor.role,
+            action: 'bill.archived',
+            fromStatus: fresh.status,
+            toStatus: BillStatus.ARCHIVED,
+            metadata: { triggeredBy: 'payment.cancel' },
+            createdAt: new Date(),
           },
         });
       }
-      if (fresh.method === method) {
-        return tx.payment.findUniqueOrThrow({ where: { id } });
-      }
-      await tx.payment.update({
-        where: { id },
-        data: { method },
-      });
-      await tx.activityLog.create({
-        data: {
-          entityType: ActivityEntityType.PAYMENT,
-          entityId: id,
-          actorId: actor.id,
-          actorRole: actor.role,
-          action: 'payment.method_changed',
-          metadata: { from: fresh.method, to: method },
-          createdAt: new Date(),
-        },
-      });
+
       return tx.payment.findUniqueOrThrow({ where: { id } });
     });
     return toPaymentResponse(updated);

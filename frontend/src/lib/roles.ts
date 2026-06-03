@@ -31,7 +31,6 @@ export type PermissionAction =
   | 'payment.markAsPaid'
   | 'payment.cancel'
   | 'payment.retry'
-  | 'payment.changeMethod'
   | 'payment.bulkRelease'
   | 'payment.bulkMarkAsPaid'
   | 'payment.bulkCancel'
@@ -68,7 +67,6 @@ const PERMISSIONS: Readonly<Record<PermissionAction, readonly Role[]>> = {
   'payment.markAsPaid': ['ADMIN'],
   'payment.cancel': ['ADMIN'],
   'payment.retry': ['ADMIN'],
-  'payment.changeMethod': ['ADMIN'],
   'payment.bulkRelease': ['ADMIN'],
   'payment.bulkMarkAsPaid': ['ADMIN'],
   'payment.bulkCancel': ['ADMIN'],

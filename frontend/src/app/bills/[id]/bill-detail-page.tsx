@@ -357,9 +357,12 @@ function BillHeader({ bill, vendorName }: { bill: Bill; vendorName: string }): R
           {bill.description ? (
             <p className="text-sm text-muted-foreground">{bill.description}</p>
           ) : null}
-          {bill.paymentMethod ? (
+          {bill.paymentMethod && !bill.payment ? (
             <p className="text-xs text-muted-foreground">
-              Payment method override: <span className="font-medium text-foreground">{bill.paymentMethod}</span>
+              Payment method (on approve):{' '}
+              <span className="font-medium text-foreground">
+                {bill.paymentMethod}
+              </span>
             </p>
           ) : null}
         </div>
