@@ -118,6 +118,56 @@ export function BulkToolbar({
   const selectedSet = new Set(selectedIds);
   const selectedBills = bills.filter((bill) => selectedSet.has(bill.id));
 
+  // Per-action eligibility counts. Each action surfaces a "N of M
+  // eligible" hint via Affordance; the button is disabled when none of
+  // the selected rows could possibly succeed so the user does not fire
+  // a guaranteed-fail bulk request with no visible feedback. The
+  // backend still validates per item; this is purely a pre-flight gate
+  // that mirrors the documented status guards (see
+  // `docs/api-contract.md → Bulk operations`).
+  const NON_TERMINAL_BILL: ReadonlySet<Bill['status']> = new Set([
+    'DRAFT',
+    'PENDING_APPROVAL',
+    'APPROVED',
+    'SCHEDULED',
+  ]);
+  const PAYMENT_STATUS_BY_BILL = new Map(
+    selectedBills.map((bill) => [bill.id, bill.payment?.status ?? null]),
+  );
+  const countBills = (predicate: (bill: Bill) => boolean): number =>
+    selectedBills.filter(predicate).length;
+  const countPayments = (
+    predicate: (status: BillPayment['status']) => boolean,
+  ): number =>
+    selectedBills.filter((bill) => {
+      const status = PAYMENT_STATUS_BY_BILL.get(bill.id);
+      return status !== null && status !== undefined && predicate(status);
+    }).length;
+  const eligible = {
+    submit: countBills((b) => b.status === 'DRAFT'),
+    approve: countBills((b) => b.status === 'PENDING_APPROVAL'),
+    reject: countBills((b) => b.status === 'PENDING_APPROVAL'),
+    archive: countBills((b) => NON_TERMINAL_BILL.has(b.status)),
+    edit: countBills((b) => NON_TERMINAL_BILL.has(b.status)),
+    schedule: countPayments((s) => s === 'UNSCHEDULED'),
+    release: countPayments((s) => s === 'SCHEDULED'),
+    markPaid: countPayments(
+      (s) => s === 'UNSCHEDULED' || s === 'SCHEDULED' || s === 'INITIATED',
+    ),
+    cancel: countPayments(
+      (s) =>
+        s === 'UNSCHEDULED' ||
+        s === 'SCHEDULED' ||
+        s === 'INITIATED' ||
+        s === 'FAILED',
+    ),
+    retry: countPayments((s) => s === 'FAILED'),
+  } as const;
+  const eligibilityHint = (count: number, action: string): string =>
+    count === 0
+      ? `Nothing in the selection can be ${action}.`
+      : `${count} of ${selectedIds.length} can be ${action}.`;
+
   // Map a bill id to its linked payment id so payment-tab actions can be
   // dispatched against the right entity. Rows without a payment are
   // dropped — the buttons disable when nothing in the selection has one.
@@ -212,13 +262,17 @@ export function BulkToolbar({
             <>
               <Affordance
                 show
-                enabled={canSubmit}
-                disabledHint="Your role cannot submit bills for approval."
+                enabled={canSubmit && eligible.submit > 0}
+                disabledHint={
+                  !canSubmit
+                    ? 'Your role cannot submit bills for approval.'
+                    : eligibilityHint(eligible.submit, 'submitted')
+                }
               >
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!canSubmit || isAnyPending}
+                  disabled={!canSubmit || eligible.submit === 0 || isAnyPending}
                   onClick={async () => {
                     const response = await submitMutation.mutateAsync({ ids: selectedIds });
                     presentBills('Submit for approval', response);
@@ -230,13 +284,17 @@ export function BulkToolbar({
               </Affordance>
               <Affordance
                 show
-                enabled={canBulkEdit}
-                disabledHint="Your role cannot edit bills."
+                enabled={canBulkEdit && eligible.edit > 0}
+                disabledHint={
+                  !canBulkEdit
+                    ? 'Your role cannot edit bills.'
+                    : eligibilityHint(eligible.edit, 'edited')
+                }
               >
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!canBulkEdit || isAnyPending}
+                  disabled={!canBulkEdit || eligible.edit === 0 || isAnyPending}
                   onClick={() => setDialog('edit')}
                 >
                   <CalendarClock className="size-4" />
@@ -250,12 +308,16 @@ export function BulkToolbar({
             <>
               <Affordance
                 show
-                enabled={canBulkApprove}
-                disabledHint="Your role cannot approve bills."
+                enabled={canBulkApprove && eligible.approve > 0}
+                disabledHint={
+                  !canBulkApprove
+                    ? 'Your role cannot approve bills.'
+                    : eligibilityHint(eligible.approve, 'approved')
+                }
               >
                 <Button
                   size="sm"
-                  disabled={!canBulkApprove || isAnyPending}
+                  disabled={!canBulkApprove || eligible.approve === 0 || isAnyPending}
                   onClick={async () => {
                     const response = await approveMutation.mutateAsync({ ids: selectedIds });
                     presentBills('Approve bills', response);
@@ -267,13 +329,17 @@ export function BulkToolbar({
               </Affordance>
               <Affordance
                 show
-                enabled={canReject}
-                disabledHint="Your role cannot reject bills."
+                enabled={canReject && eligible.reject > 0}
+                disabledHint={
+                  !canReject
+                    ? 'Your role cannot reject bills.'
+                    : eligibilityHint(eligible.reject, 'rejected')
+                }
               >
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!canReject || isAnyPending}
+                  disabled={!canReject || eligible.reject === 0 || isAnyPending}
                   onClick={() => setDialog('reject')}
                 >
                   <X className="size-4" />
@@ -287,17 +353,17 @@ export function BulkToolbar({
             <>
               <Affordance
                 show
-                enabled={canSchedule && paymentIds.length > 0}
+                enabled={canSchedule && eligible.schedule > 0}
                 disabledHint={
-                  canSchedule
-                    ? 'None of the selected bills have a payment yet.'
-                    : 'Your role cannot schedule payments.'
+                  !canSchedule
+                    ? 'Your role cannot schedule payments.'
+                    : eligibilityHint(eligible.schedule, 'scheduled')
                 }
               >
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!canSchedule || paymentIds.length === 0 || isAnyPending}
+                  disabled={!canSchedule || eligible.schedule === 0 || isAnyPending}
                   onClick={() => setDialog('schedule')}
                 >
                   <CalendarDays className="size-4" />
@@ -306,17 +372,17 @@ export function BulkToolbar({
               </Affordance>
               <Affordance
                 show
-                enabled={canRelease && paymentIds.length > 0}
+                enabled={canRelease && eligible.release > 0}
                 disabledHint={
-                  canRelease
-                    ? 'None of the selected bills have a payment yet.'
-                    : 'Your role cannot release payments.'
+                  !canRelease
+                    ? 'Your role cannot release payments.'
+                    : eligibilityHint(eligible.release, 'released')
                 }
               >
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!canRelease || paymentIds.length === 0 || isAnyPending}
+                  disabled={!canRelease || eligible.release === 0 || isAnyPending}
                   onClick={async () => {
                     const response = await releaseMutation.mutateAsync({ ids: paymentIds });
                     presentPayments('Release payments', response);
@@ -328,17 +394,17 @@ export function BulkToolbar({
               </Affordance>
               <Affordance
                 show
-                enabled={canMarkPaid && paymentIds.length > 0}
+                enabled={canMarkPaid && eligible.markPaid > 0}
                 disabledHint={
-                  canMarkPaid
-                    ? 'None of the selected bills have a payment yet.'
-                    : 'Your role cannot mark payments as paid.'
+                  !canMarkPaid
+                    ? 'Your role cannot mark payments as paid.'
+                    : eligibilityHint(eligible.markPaid, 'marked as paid')
                 }
               >
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!canMarkPaid || paymentIds.length === 0 || isAnyPending}
+                  disabled={!canMarkPaid || eligible.markPaid === 0 || isAnyPending}
                   onClick={async () => {
                     const response = await markPaidMutation.mutateAsync({ ids: paymentIds });
                     presentPayments('Mark payments as paid', response);
@@ -350,17 +416,17 @@ export function BulkToolbar({
               </Affordance>
               <Affordance
                 show
-                enabled={canCancel && paymentIds.length > 0}
+                enabled={canCancel && eligible.cancel > 0}
                 disabledHint={
-                  canCancel
-                    ? 'None of the selected bills have a payment yet.'
-                    : 'Your role cannot cancel payments.'
+                  !canCancel
+                    ? 'Your role cannot cancel payments.'
+                    : eligibilityHint(eligible.cancel, 'canceled')
                 }
               >
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!canCancel || paymentIds.length === 0 || isAnyPending}
+                  disabled={!canCancel || eligible.cancel === 0 || isAnyPending}
                   onClick={async () => {
                     const response = await cancelMutation.mutateAsync({ ids: paymentIds });
                     presentPayments('Cancel payments', response);
@@ -372,17 +438,17 @@ export function BulkToolbar({
               </Affordance>
               <Affordance
                 show
-                enabled={canRetry && paymentIds.length > 0}
+                enabled={canRetry && eligible.retry > 0}
                 disabledHint={
-                  canRetry
-                    ? 'None of the selected bills have a payment yet.'
-                    : 'Your role cannot retry payments.'
+                  !canRetry
+                    ? 'Your role cannot retry payments.'
+                    : eligibilityHint(eligible.retry, 'retried')
                 }
               >
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!canRetry || paymentIds.length === 0 || isAnyPending}
+                  disabled={!canRetry || eligible.retry === 0 || isAnyPending}
                   onClick={async () => {
                     const response = await retryMutation.mutateAsync({ ids: paymentIds });
                     presentPayments('Retry payments', response);
@@ -397,13 +463,17 @@ export function BulkToolbar({
 
           <Affordance
             show
-            enabled={canBulkArchive}
-            disabledHint="Your role cannot archive bills."
+            enabled={canBulkArchive && eligible.archive > 0}
+            disabledHint={
+              !canBulkArchive
+                ? 'Your role cannot archive bills.'
+                : eligibilityHint(eligible.archive, 'archived')
+            }
           >
             <Button
               size="sm"
               variant="outline"
-              disabled={!canBulkArchive || isAnyPending}
+              disabled={!canBulkArchive || eligible.archive === 0 || isAnyPending}
               onClick={async () => {
                 const response = await archiveMutation.mutateAsync({ ids: selectedIds });
                 presentBills('Archive bills', response);
