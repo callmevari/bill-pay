@@ -608,6 +608,9 @@ export function BulkToolbar({
         description="Due date, invoice date, and description can be bulk-edited. Leave a field blank to keep it untouched; terminal bills will fail per item."
         confirmLabel="Apply changes"
         pending={editMutation.isPending}
+        confirmDisabled={
+          !editDueDate && !editInvoiceDate && editDescription.trim() === ''
+        }
         onConfirm={async () => {
           const fields: {
             dueDate?: string;
