@@ -40,6 +40,27 @@ services:
       retries: 20
       start_period: 30s
 
+  # Opt-in Prisma Studio. Off by default so the standard
+  # `docker compose up` stays minimal; bring it up with
+  #   `docker compose --profile studio up --build`
+  # to inspect the live database at http://localhost:5555.
+  # Reuses the backend image (Prisma CLI is already inside it). No
+  # auth on the Studio UI — only meant for local review against
+  # demo data.
+  prisma-studio:
+    profiles: ["studio"]
+    image: bill-pay-backend:latest
+    container_name: billpay-studio
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/billpay?schema=public
+    ports:
+      - "5555:5555"
+    command: ["./node_modules/.bin/prisma", "studio", "--port", "5555", "--browser", "none", "--hostname", "0.0.0.0"]
+    restart: unless-stopped
+
   frontend:
     build:
       context: .
