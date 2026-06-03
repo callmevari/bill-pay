@@ -4,9 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import type { RowSelectionState } from '@tanstack/react-table';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BillsTable } from '@/components/bills/bills-table';
+import { BulkToolbar } from '@/components/bills/bulk-toolbar';
+import { ExportMenu } from '@/components/bills/export-menu';
 import { EMPTY_FILTERS, FilterBar, type BillFiltersValue } from '@/components/bills/filter-bar';
 import { BILL_TABS, DEFAULT_TAB, findTab, type BillTabId } from '@/lib/bill-tabs';
 import { useBillsQuery } from '@/hooks/use-bills-query';
@@ -25,6 +28,47 @@ export function BillsPage(): React.JSX.Element {
   const params = useSearchParams();
   const hydrated = useRoleHydrated();
   const canCreate = useCan('bill.create');
+
+  // Any role with at least one bulk-capable action gets the selection
+  // column + toolbar. Viewer has none, so the checkboxes vanish entirely
+  // (the noise of "select rows you can't act on" is worse than no
+  // selection at all).
+  const canBulkSubmit = useCan('bill.submitForApproval');
+  const canBulkApprove = useCan('bill.bulkApprove');
+  const canBulkReject = useCan('bill.reject');
+  const canBulkArchive = useCan('bill.bulkArchive');
+  const canBulkEdit = useCan('bill.bulkEdit');
+  const canBulkSchedule = useCan('payment.schedule');
+  const canBulkRelease = useCan('payment.bulkRelease');
+  const canBulkMarkPaid = useCan('payment.bulkMarkAsPaid');
+  const canBulkCancel = useCan('payment.bulkCancel');
+  const canBulkRetry = useCan('payment.retry');
+  // Resolved lazily once `activeTab` is known below — mirrors the per-tab
+  // button surface in `BulkToolbar` so the selection column only appears
+  // on tabs where the role has at least one applicable action.
+  const tabActions: Readonly<Record<BillTabId, boolean>> = {
+    overview:
+      canBulkSubmit ||
+      canBulkEdit ||
+      canBulkApprove ||
+      canBulkReject ||
+      canBulkSchedule ||
+      canBulkRelease ||
+      canBulkMarkPaid ||
+      canBulkCancel ||
+      canBulkRetry ||
+      canBulkArchive,
+    drafts: canBulkSubmit || canBulkEdit || canBulkArchive,
+    'for-approvals': canBulkApprove || canBulkReject || canBulkArchive,
+    'for-payment':
+      canBulkSchedule ||
+      canBulkRelease ||
+      canBulkMarkPaid ||
+      canBulkCancel ||
+      canBulkRetry ||
+      canBulkArchive,
+    history: false,
+  };
 
   // Tab persists in the URL when explicit, otherwise falls back to the
   // last-used tab from localStorage so a refresh keeps the user in place.
@@ -60,6 +104,7 @@ export function BillsPage(): React.JSX.Element {
   const sort = params.get('sort') ?? DEFAULT_SORT;
 
   const tabConfig = findTab(activeTab);
+  const canBulkOnTab = tabActions[activeTab];
 
   const replaceParams = useCallback(
     (next: Record<string, string | undefined>) => {
@@ -77,18 +122,28 @@ export function BillsPage(): React.JSX.Element {
     [params, router],
   );
 
+  // Bulk-action selection lives at the page level so the toolbar can read
+  // it without lifting state out of the table later. The selection is
+  // cleared whenever the underlying dataset shifts — tab switch, filter
+  // change, page change — because the row ids in the cache no longer
+  // match what the user is looking at.
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const clearSelection = useCallback(() => setRowSelection({}), []);
+
   const onTabChange = (next: string): void => {
     const tab = findTab(next).id;
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(STORAGE_TAB_KEY, tab);
     }
     setPersistedTab(tab);
+    clearSelection();
     // Reset page on tab switch; clear sort/filters? we keep filters but
     // reset paging so the user lands on a meaningful first page.
     replaceParams({ tab, page: undefined });
   };
 
   const onFiltersChange = (next: BillFiltersValue): void => {
+    clearSelection();
     replaceParams({
       q: next.q,
       vendorId: next.vendorId,
@@ -102,10 +157,12 @@ export function BillsPage(): React.JSX.Element {
   };
 
   const onSortChange = (next: string): void => {
+    clearSelection();
     replaceParams({ sort: next === '' ? undefined : next, page: undefined });
   };
 
   const onPageChange = (next: number): void => {
+    clearSelection();
     replaceParams({ page: next === 1 ? undefined : String(next) });
   };
 
@@ -139,12 +196,55 @@ export function BillsPage(): React.JSX.Element {
     return map;
   }, [vendors]);
 
-  const bills = billsQuery.data?.data ?? [];
+  const bills = useMemo(
+    () => billsQuery.data?.data ?? [],
+    [billsQuery.data?.data],
+  );
   const meta = billsQuery.data?.meta;
   const start = bills.length === 0 ? 0 : (page - 1) * pageSize + 1;
   const end = bills.length === 0 ? 0 : start + bills.length - 1;
   const total = meta?.total ?? 0;
   const totalPages = meta?.totalPages ?? 1;
+
+  // Drop selected ids that vanished from the current page so a stale row
+  // id never sneaks into a bulk request. Cheap O(n) sync after each fetch
+  // settles; runs only when the visible id set actually changes.
+  const visibleIds = useMemo(() => bills.map((bill) => bill.id), [bills]);
+  useEffect(() => {
+    setRowSelection((prev) => {
+      const visible = new Set(visibleIds);
+      const kept: RowSelectionState = {};
+      let changed = false;
+      for (const [id, value] of Object.entries(prev)) {
+        if (visible.has(id)) {
+          kept[id] = value;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? kept : prev;
+    });
+  }, [visibleIds]);
+
+  const selectedIds = Object.keys(rowSelection).filter((id) => rowSelection[id]);
+
+  // Build the filter querystring once so both the table query and the CSV
+  // export pin to the same view. Empty values are dropped — see the
+  // existing convention in `useBillsQuery → buildQueryString`.
+  const exportSearch = useMemo(() => {
+    const search = new URLSearchParams();
+    if (tabConfig.status) search.set('status', tabConfig.status.join(','));
+    if (filters.vendorId) search.set('vendorId', filters.vendorId);
+    if (filters.minAmount) search.set('minAmount', filters.minAmount);
+    if (filters.maxAmount) search.set('maxAmount', filters.maxAmount);
+    if (filters.dueDateFrom) search.set('dueDateFrom', toIsoStart(filters.dueDateFrom));
+    if (filters.dueDateTo) search.set('dueDateTo', toIsoEnd(filters.dueDateTo));
+    if (filters.paymentMethod) search.set('paymentMethod', filters.paymentMethod);
+    if (filters.q) search.set('q', filters.q);
+    if (sort) search.set('sort', sort);
+    const str = search.toString();
+    return str ? `?${str}` : '';
+  }, [tabConfig.status, filters, sort]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -194,6 +294,25 @@ export function BillsPage(): React.JSX.Element {
         pageSize={pageSize}
         storageKey={STORAGE_COLUMNS_KEY}
         showPaymentActions={activeTab === 'for-payment' || activeTab === 'history'}
+        selectionState={canBulkOnTab ? rowSelection : undefined}
+        onSelectionStateChange={canBulkOnTab ? setRowSelection : undefined}
+        toolbarLeading={<ExportMenu searchString={exportSearch} />}
+        toolbarSlot={
+          /* Always mount BulkToolbar so its `result` state, the result
+             modal, and the toast `Details` action survive the
+             selection-clear that follows every bulk run. The component
+             hides its UI internally when `selectedIds` is empty.
+             Roles with no bulk actions (Viewer) never get the column
+             above, so the toolbar simply never receives selected ids. */
+          canBulkOnTab ? (
+            <BulkToolbar
+              selectedIds={selectedIds}
+              bills={bills}
+              activeTab={activeTab}
+              onClearSelection={clearSelection}
+            />
+          ) : null
+        }
       />
 
       {meta && total > 0 ? (

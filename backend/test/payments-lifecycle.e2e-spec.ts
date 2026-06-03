@@ -204,7 +204,7 @@ describe('Payments lifecycle (e2e)', () => {
     expect(billAfter.status).toBe(BillStatus.SCHEDULED);
   });
 
-  it('cancel from SCHEDULED: payment CANCELED, bill back to APPROVED, canceledAt set', async () => {
+  it('cancel from SCHEDULED: payment CANCELED, bill auto-archived, canceledAt set', async () => {
     const { bill, payment } = await seedBillWithPayment({
       billStatus: BillStatus.SCHEDULED,
       paymentStatus: PaymentStatus.SCHEDULED,
@@ -219,13 +219,18 @@ describe('Payments lifecycle (e2e)', () => {
     expect(body.status).toBe('CANCELED');
     expect(body.canceledAt).not.toBeNull();
 
+    // The system only creates 1 Payment per Bill; once that Payment is
+    // canceled the Bill has no forward motion, so the cascade archives
+    // it. The bill.archived activity row records `triggeredBy:
+    // 'payment.cancel'` so the trail explains the dead-end.
     const billAfter = await prisma.bill.findUniqueOrThrow({
       where: { id: bill.id },
     });
-    expect(billAfter.status).toBe(BillStatus.APPROVED);
+    expect(billAfter.status).toBe(BillStatus.ARCHIVED);
+    expect(billAfter.archivedAt).not.toBeNull();
   });
 
-  it('cancel from INITIATED: payment CANCELED, bill back to APPROVED', async () => {
+  it('cancel from INITIATED: payment CANCELED, bill auto-archived', async () => {
     const { bill, payment } = await seedBillWithPayment({
       billStatus: BillStatus.SCHEDULED,
       paymentStatus: PaymentStatus.INITIATED,
@@ -242,7 +247,7 @@ describe('Payments lifecycle (e2e)', () => {
     const billAfter = await prisma.bill.findUniqueOrThrow({
       where: { id: bill.id },
     });
-    expect(billAfter.status).toBe(BillStatus.APPROVED);
+    expect(billAfter.status).toBe(BillStatus.ARCHIVED);
   });
 
   it('mark-as-paid direct from SCHEDULED (skip release): payment PAID, bill PAID', async () => {
@@ -266,7 +271,27 @@ describe('Payments lifecycle (e2e)', () => {
     expect(billAfter.status).toBe(BillStatus.PAID);
   });
 
-  it('cancel from FAILED: payment CANCELED, bill SCHEDULED -> APPROVED', async () => {
+  it('mark-as-paid direct from UNSCHEDULED (OFF_PLATFORM path): payment PAID, bill APPROVED -> PAID', async () => {
+    const { bill, payment } = await seedBillWithPayment({
+      billStatus: BillStatus.APPROVED,
+      paymentStatus: PaymentStatus.UNSCHEDULED,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/payments/${payment.id}/mark-as-paid`)
+      .set('x-user-id', actors.admin.id);
+    expect(res.status).toBe(200);
+    const body = res.body as { status: string; paidAt: string | null };
+    expect(body.status).toBe('PAID');
+    expect(body.paidAt).not.toBeNull();
+
+    const billAfter = await prisma.bill.findUniqueOrThrow({
+      where: { id: bill.id },
+    });
+    expect(billAfter.status).toBe(BillStatus.PAID);
+  });
+
+  it('cancel from FAILED: payment CANCELED, bill auto-archived', async () => {
     const { bill, payment } = await seedBillWithPayment({
       billStatus: BillStatus.SCHEDULED,
       paymentStatus: PaymentStatus.FAILED,
@@ -284,7 +309,25 @@ describe('Payments lifecycle (e2e)', () => {
     const billAfter = await prisma.bill.findUniqueOrThrow({
       where: { id: bill.id },
     });
-    expect(billAfter.status).toBe(BillStatus.APPROVED);
+    expect(billAfter.status).toBe(BillStatus.ARCHIVED);
+  });
+
+  it('cancel from UNSCHEDULED: payment CANCELED, bill auto-archived', async () => {
+    const { bill, payment } = await seedBillWithPayment({
+      billStatus: BillStatus.APPROVED,
+      paymentStatus: PaymentStatus.UNSCHEDULED,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/payments/${payment.id}/cancel`)
+      .set('x-user-id', actors.admin.id);
+    expect(res.status).toBe(200);
+    expect((res.body as { status: string }).status).toBe('CANCELED');
+
+    const billAfter = await prisma.bill.findUniqueOrThrow({
+      where: { id: bill.id },
+    });
+    expect(billAfter.status).toBe(BillStatus.ARCHIVED);
   });
 
   it('viewer cannot cancel a payment (403)', async () => {

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DATE_INPUT_MAX, DATE_INPUT_MIN } from '@/lib/wire';
 import {
   Select,
   SelectContent,
@@ -209,6 +210,8 @@ export function FilterBar({
           <Input
             id="bills-from"
             type="date"
+            min={DATE_INPUT_MIN}
+            max={DATE_INPUT_MAX}
             value={value.dueDateFrom}
             onChange={(event) => onChange({ ...value, dueDateFrom: event.target.value })}
             className="w-40"
@@ -222,6 +225,8 @@ export function FilterBar({
           <Input
             id="bills-to"
             type="date"
+            min={DATE_INPUT_MIN}
+            max={DATE_INPUT_MAX}
             value={value.dueDateTo}
             onChange={(event) => onChange({ ...value, dueDateTo: event.target.value })}
             className="w-40"

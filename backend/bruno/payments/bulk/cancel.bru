@@ -17,8 +17,12 @@ body:json {
 }
 
 docs {
-  Admin only. Cancels every supplied in-flight payment (SCHEDULED /
-  INITIATED / FAILED -> CANCELED) and cascades the linked bill from
-  SCHEDULED back to APPROVED. UNSCHEDULED / PAID / CANCELED items fail
-  per item with PAYMENT_INVALID_TRANSITION.
+  Admin only. Cancels every supplied in-flight payment
+  (UNSCHEDULED / SCHEDULED / INITIATED / FAILED -> CANCELED) and
+  cascades each linked Bill to ARCHIVED in the same transaction.
+  PAID / CANCELED items fail per item with PAYMENT_INVALID_TRANSITION.
+
+  Response shape: `{ results: [{ id, ok, data? | error? }], summary }`.
+  Always HTTP 200; empty / duplicate `ids` -> 400 BULK_INVALID_IDS.
+  See `bills/bulk/approve.bru` for the full envelope.
 }

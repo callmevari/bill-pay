@@ -20,6 +20,10 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   destructive?: boolean;
   pending?: boolean;
+  // Lets the caller block the confirm button on a precondition without
+  // owning the in-flight state — e.g. "Apply changes" disabled when no
+  // field in the bulk edit form is filled.
+  confirmDisabled?: boolean;
   onConfirm: () => void | Promise<void>;
   children?: ReactNode;
 }
@@ -37,13 +41,14 @@ export function ConfirmDialog({
   cancelLabel = 'Cancel',
   destructive = false,
   pending = false,
+  confirmDisabled = false,
   onConfirm,
   children,
 }: ConfirmDialogProps): React.JSX.Element {
   const [submitting, setSubmitting] = useState(false);
 
   const handleConfirm = async (): Promise<void> => {
-    if (submitting || pending) return;
+    if (submitting || pending || confirmDisabled) return;
     setSubmitting(true);
     try {
       await onConfirm();
@@ -75,7 +80,7 @@ export function ConfirmDialog({
             size="sm"
             variant={destructive ? 'destructive' : 'default'}
             onClick={() => void handleConfirm()}
-            disabled={submitting || pending}
+            disabled={submitting || pending || confirmDisabled}
           >
             {confirmLabel}
           </Button>

@@ -89,4 +89,15 @@ describe('Vendors (e2e)', () => {
     const body = res.body as { error: { code: string } };
     expect(body.error.code).toBe('INSUFFICIENT_PERMISSIONS');
   });
+
+  it('POST /vendors without defaultPaymentMethod returns 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/vendors')
+      .set('x-user-id', actors.admin.id)
+      .send({ name: 'Missing Method Vendor', email: 'mmv@e2e.test' });
+
+    expect(res.status).toBe(400);
+    const body = res.body as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+  });
 });

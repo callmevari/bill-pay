@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BillStatus } from '@prisma/client';
+import { BillStatus, PaymentMethod } from '@prisma/client';
 
 import { BillApprovalResponseDto } from './bill-approval-response.dto';
 import { BillLineItemResponseDto } from './bill-line-item-response.dto';
@@ -29,6 +29,9 @@ export class BillResponseDto {
 
   @ApiProperty({ example: 'USD' })
   currency: string;
+
+  @ApiPropertyOptional({ enum: PaymentMethod, nullable: true })
+  paymentMethod: PaymentMethod | null;
 
   @ApiProperty({ format: 'date-time' })
   invoiceDate: string;

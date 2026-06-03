@@ -32,6 +32,27 @@ export function isoToInputDate(iso: string | null | undefined): string {
   return iso.slice(0, 10);
 }
 
+// `<input type="date">` accepts up to 6-digit years per spec, which the
+// backend's ISO-8601 validator rejects. We clamp the picker to a sane
+// range and re-validate the typed value because some browsers still let
+// you paste / arrow-key past `max`. Year 1900 catches old paper invoices
+// without rejecting them; 9999 keeps every legitimate due date valid.
+export const DATE_INPUT_MIN = '1900-01-01';
+export const DATE_INPUT_MAX = '9999-12-31';
+
+const DATE_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+// Returns true for a `YYYY-MM-DD` string whose year is 4 digits, month
+// 01-12, day 01-31, AND that round-trips through `Date` (so 2026-02-31
+// is rejected even though the regex would pass it).
+export function isValidDateInput(value: string): boolean {
+  if (!DATE_INPUT_PATTERN.test(value)) return false;
+  if (value < DATE_INPUT_MIN || value > DATE_INPUT_MAX) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.toISOString().slice(0, 10) === value;
+}
+
 // `details.messages` shape used by the backend's class-validator path. The
 // outer envelope is `{ code: 'VALIDATION_ERROR', details: { messages: [..] } }`
 // — we tolerate any shape that holds a string list and ignore the rest so

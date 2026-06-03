@@ -6,12 +6,11 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { describeMutationError } from '@/lib/mutation-errors';
 import type { PaymentMethod, Vendor } from '@/lib/api-types';
 
-// Body shape for create + update. `defaultPaymentMethod` is nullable on
-// the wire — both `null` (clear) and `undefined` (leave alone) are
-// distinct intents; the form only sends what changed.
+// Body shape for create + update. `defaultPaymentMethod` is required on
+// create; `undefined` on update means "leave alone" (PATCH semantics).
 export interface VendorMutationInput {
   name?: string;
-  defaultPaymentMethod?: PaymentMethod | null;
+  defaultPaymentMethod?: PaymentMethod;
 }
 
 export interface UpdateVendorVariables {

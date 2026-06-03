@@ -75,19 +75,19 @@ export function BillActions({ bill }: BillActionsProps): React.JSX.Element {
           enabled={canEditNow}
           disabledHint={`Bills in ${bill.status} cannot be edited.`}
         >
-          <Button asChild={canEditNow} size="sm" variant="outline" disabled={!canEditNow}>
-            {canEditNow ? (
+          {canEditNow ? (
+            <Button asChild size="sm" variant="outline">
               <Link href={`/bills/${bill.id}/edit`}>
                 <FileEdit className="size-4" />
                 Edit
               </Link>
-            ) : (
-              <span>
-                <FileEdit className="size-4" />
-                Edit
-              </span>
-            )}
-          </Button>
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" disabled>
+              <FileEdit className="size-4" />
+              Edit
+            </Button>
+          )}
         </Affordance>
       ) : null}
 

@@ -2,38 +2,18 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  BarChart3,
-  CreditCard,
-  FileText,
-  Receipt,
-  Settings,
-  Store,
-  Wallet,
-} from 'lucide-react';
+import { Receipt, Store, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
-  // Phase 8 ships Bills + Vendors. Other items live as disabled signposts so
-  // the shell mirrors the assignment screenshot without pretending features
-  // that aren't built yet.
-  disabled?: boolean;
 }
 
 const PRIMARY_NAV: NavItem[] = [
   { label: 'Bills', href: '/', icon: Receipt },
   { label: 'Vendors', href: '/vendors', icon: Store },
-];
-
-const SECONDARY_NAV: NavItem[] = [
-  { label: 'Insights', href: '/insights', icon: BarChart3, disabled: true },
-  { label: 'Payments', href: '/payments', icon: CreditCard, disabled: true },
-  { label: 'Activity', href: '/activity', icon: FileText, disabled: true },
-  { label: 'Settings', href: '/settings', icon: Settings, disabled: true },
 ];
 
 export function Sidebar(): React.JSX.Element {
@@ -55,7 +35,6 @@ export function Sidebar(): React.JSX.Element {
 
       <nav className="flex flex-1 flex-col gap-6 px-2 py-4">
         <NavGroup label="Workspace" items={PRIMARY_NAV} />
-        <NavGroup label="Coming soon" items={SECONDARY_NAV} />
       </nav>
     </aside>
   );
@@ -76,35 +55,16 @@ function NavGroup({ label, items }: { label: string; items: NavItem[] }): React.
 
 function NavLink({ item }: { item: NavItem }): React.JSX.Element {
   const pathname = usePathname();
-  const isActive = !item.disabled && (item.href === '/' ? pathname === '/' : pathname.startsWith(item.href));
+  const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
   const Icon = item.icon;
 
-  const base =
-    'flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors';
-  const enabled = cn(base, isActive ? 'bg-sidebar-accent font-medium' : 'hover:bg-sidebar-accent/60');
-  const disabled = cn(base, 'cursor-not-allowed text-muted-foreground opacity-60');
-
-  if (item.disabled) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            aria-disabled="true"
-            onClick={(e) => e.preventDefault()}
-            className={disabled}
-          >
-            <Icon className="size-4" />
-            <span>{item.label}</span>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent>Coming in a later phase</TooltipContent>
-      </Tooltip>
-    );
-  }
+  const className = cn(
+    'flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors',
+    isActive ? 'bg-sidebar-accent font-medium' : 'hover:bg-sidebar-accent/60',
+  );
 
   return (
-    <Link href={item.href} className={enabled}>
+    <Link href={item.href} className={className}>
       <Icon className="size-4" />
       <span>{item.label}</span>
     </Link>

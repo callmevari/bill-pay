@@ -11,8 +11,8 @@ export class VendorResponseDto {
   @ApiPropertyOptional({ nullable: true })
   email: string | null;
 
-  @ApiPropertyOptional({ enum: PaymentMethod, nullable: true })
-  defaultPaymentMethod: PaymentMethod | null;
+  @ApiProperty({ enum: PaymentMethod })
+  defaultPaymentMethod: PaymentMethod;
 
   @ApiPropertyOptional({ nullable: true })
   streetAddress: string | null;

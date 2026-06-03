@@ -17,8 +17,20 @@ const ALLOWED_FROM: Record<PaymentAction, ReadonlySet<PaymentStatus>> = {
   schedule: new Set<PaymentStatus>(['UNSCHEDULED']),
   unschedule: new Set<PaymentStatus>(['SCHEDULED']),
   release: new Set<PaymentStatus>(['SCHEDULED']),
-  markAsPaid: new Set<PaymentStatus>(['SCHEDULED', 'INITIATED']),
-  cancel: new Set<PaymentStatus>(['SCHEDULED', 'INITIATED', 'FAILED']),
+  // UNSCHEDULED covers the OFF_PLATFORM path (paid externally with
+  // cash / check) and back-dated rail payments recorded after the
+  // fact. Bill cascades APPROVED -> PAID on the backend in that case.
+  markAsPaid: new Set<PaymentStatus>(['UNSCHEDULED', 'SCHEDULED', 'INITIATED']),
+  // UNSCHEDULED is cancelable — "we decided not to pay this approved
+  // bill" is a common operator action. Backend cascades the bill to
+  // ARCHIVED on cancel because the system only creates one Payment
+  // per Bill.
+  cancel: new Set<PaymentStatus>([
+    'UNSCHEDULED',
+    'SCHEDULED',
+    'INITIATED',
+    'FAILED',
+  ]),
   retry: new Set<PaymentStatus>(['FAILED']),
 };
 

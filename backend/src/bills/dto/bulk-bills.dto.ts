@@ -38,22 +38,36 @@ export class BulkBillIdsDto {
 
 // Subset of bill fields that make sense to bulk-edit. Maps to the
 // existing single-item `PATCH /bills/:id` surface so the same
-// `BillsService.update` flow (including the BILL_NOT_EDITABLE guard and
-// the per-bill activity-log row) is reused for every item.
+// `BillsService.update` flow (including the BILL_NOT_EDITABLE guard,
+// the post-payment field lock, and the per-bill activity-log row) is
+// reused for every item.
 //
-// `paymentMethod` is intentionally NOT bulk-editable in this MVP:
-// payment method lives on the linked `Payment` row, not on the Bill.
-// Surfacing it through the bills bulk path would require a parallel
-// service method that crosses the bill ↔ payment boundary, with its
-// own status guard (only edit if a payment exists and isn't PAID).
-// That's a real product use case but not "use the existing single-item
-// service methods" as the playbook calls for; see `docs/backend.md`
-// for the rationale.
+// Editable in bulk: `dueDate`, `invoiceDate`, `description`. AP teams
+// use them for mass-reschedule (`dueDate`), batch typo correction
+// (`invoiceDate`), and reclassification tags (`description`).
+//
+// `amount` is intentionally NOT bulk-editable even though the spec
+// lists it: bulk-setting the same monetary value across N distinct
+// invoices is almost never the correct operation, and AP teams that
+// truly need batch amount changes reach for a CSV import flow that is
+// out of scope for the MVP. See `docs/backend.md` for the rationale.
+//
+// `paymentMethod` is intentionally NOT bulk-editable in this MVP. The
+// per-bill override exists on the Bill, but the post-payment field lock
+// freezes it the moment a Payment is created — bulk-clearing the field
+// across a mixed set (some pre-approve, some post-approve) would 207
+// every other row. AP teams that need a method override do it bill-by-
+// bill during creation/approval where they can see the lock state.
 export class BulkEditBillFieldsDto {
   @ApiPropertyOptional({ format: 'date-time' })
   @ValidateIf((_, value) => value !== undefined)
   @IsISO8601()
   dueDate?: string;
+
+  @ApiPropertyOptional({ format: 'date-time' })
+  @ValidateIf((_, value) => value !== undefined)
+  @IsISO8601()
+  invoiceDate?: string;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()

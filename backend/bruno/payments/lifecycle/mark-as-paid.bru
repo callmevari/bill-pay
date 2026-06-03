@@ -11,5 +11,9 @@ post {
 }
 
 docs {
-  Admin only. SCHEDULED or INITIATED -> PAID. Sets paidAt. Bill -> PAID.
+  Admin only. UNSCHEDULED / SCHEDULED / INITIATED -> PAID. Sets
+  paidAt. Bill -> PAID (from APPROVED for the UNSCHEDULED origin,
+  from SCHEDULED for the rail-driven path). UNSCHEDULED covers the
+  OFF_PLATFORM use case — the operator records that the bill was
+  paid externally without coordinating a rail.
 }

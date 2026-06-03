@@ -153,11 +153,7 @@ export function VendorsPage(): React.JSX.Element {
       {
         id: 'method',
         header: 'Default method',
-        cell: ({ row }) => {
-          const method = row.original.defaultPaymentMethod;
-          if (!method) return <span className="text-xs text-muted-foreground">—</span>;
-          return <PaymentMethodBadge method={method} />;
-        },
+        cell: ({ row }) => <PaymentMethodBadge method={row.original.defaultPaymentMethod} />,
         meta: { label: 'Default method' },
       },
       {

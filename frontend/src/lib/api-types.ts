@@ -43,7 +43,7 @@ export interface Vendor {
   id: string;
   name: string;
   email: string | null;
-  defaultPaymentMethod: PaymentMethod | null;
+  defaultPaymentMethod: PaymentMethod;
   streetAddress: string | null;
   city: string | null;
   state: string | null;
@@ -101,6 +101,10 @@ export interface Bill {
   description: string | null;
   amount: string;
   currency: string;
+  // Per-bill override of the vendor default. `null` means "fall back to
+  // the vendor's defaultPaymentMethod". The resolved method is surfaced
+  // on `payment.method` after approval.
+  paymentMethod: PaymentMethod | null;
   invoiceDate: string;
   dueDate: string;
   archivedAt: string | null;

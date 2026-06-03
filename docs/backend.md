@@ -61,6 +61,14 @@ ARCHIVED (also reachable from any non-PAID state)
 
 `REJECTED` and `ARCHIVED` are terminal. `PAID` is terminal. Hard-delete is allowed only in `DRAFT`.
 
+#### Post-payment field lock on the Bill
+
+Once a non-cancelled `Payment` row exists for a Bill, `PATCH /bills/:id` rejects edits to `amount`, `currency`, and `paymentMethod` with **`409 BILL_FIELD_LOCKED_POST_PAYMENT`** carrying `details: { lockedFields: [...], paymentStatus }`. The operator already committed to a number and a rail; allowing the bill column to drift from the live Payment would silently desync the two — the same kind of bug the `paymentMethod` lock prevents. `description`, `dueDate`, and `invoiceDate` stay editable on purpose: memo edits, tracking-date updates, and typo-fixes don't affect the payment.
+
+#### Payment-method resolution on approve
+
+`Bill.paymentMethod` is a nullable per-bill override that wins over the vendor default at approve time. The service resolves `Payment.method` as **`bill.paymentMethod ?? vendor.defaultPaymentMethod`** and records which source won under `metadata.methodSource` (`"bill" | "vendor"`) on the `payment.created` activity row. The chain terminates at the vendor because `Vendor.defaultPaymentMethod` is non-null at the schema level — vendors can't be created without one, so there is no silent ACH fallback to fall through to. Storing the source — not just the resolved value — lets the UI explain "this Stripe invoice was wired because the bill said so" rather than just showing a method that doesn't match the vendor's usual default. The override is editable while the bill is non-terminal (it lives on the Bill, not the Payment), so finance can change it up until approve runs; once the Payment exists, its method is the source of truth and is mutated only through the Payment lifecycle.
+
 #### Bill tab mapping (UI ↔ BE)
 
 The Bills page tabs map to `BillStatus` filters. Each bill appears in exactly one tab.
@@ -92,10 +100,10 @@ UNSCHEDULED ──► SCHEDULED ──► INITIATED ──► PAID
 | `UNSCHEDULED` | `SCHEDULED` | `POST /payments/:id/schedule` | Set `scheduledFor`; bill → `SCHEDULED` |
 | `SCHEDULED` | `UNSCHEDULED` | `POST /payments/:id/unschedule` | Clear `scheduledFor`; bill → `APPROVED` |
 | `SCHEDULED` | `INITIATED` | `POST /payments/:id/release` | Set `initiatedAt` |
-| `INITIATED`/`SCHEDULED` | `PAID` | `POST /payments/:id/mark-as-paid` | Set `paidAt`; bill → `PAID` |
+| `UNSCHEDULED`/`SCHEDULED`/`INITIATED` | `PAID` | `POST /payments/:id/mark-as-paid` | Set `paidAt`; bill → `PAID` (from `APPROVED` or `SCHEDULED`). `UNSCHEDULED` covers the OFF_PLATFORM / back-dated path — operator marks the bill as paid without coordinating a rail. |
 | `INITIATED` | `FAILED` | (simulated; reachable via retry-then-fail in seed only) | Set `failedAt`, `failureReason` |
 | `FAILED` | `SCHEDULED` | `POST /payments/:id/retry` | Clear `failedAt`/`failureReason`; restore `scheduledFor` |
-| `SCHEDULED`/`INITIATED`/`FAILED` | `CANCELED` | `POST /payments/:id/cancel` | Set `canceledAt`; bill returns to `APPROVED` (unpaid queue) |
+| `UNSCHEDULED`/`SCHEDULED`/`INITIATED`/`FAILED` | `CANCELED` | `POST /payments/:id/cancel` | Set `canceledAt`; **bill auto-archives** (`bill.archived` activity row with `metadata.triggeredBy: 'payment.cancel'`). The system creates exactly one Payment per Bill at approve time, so a canceled Payment leaves the Bill with no forward motion — archiving makes the dead-end honest in the audit trail. |
 
 `PAID` and `CANCELED` are terminal.
 

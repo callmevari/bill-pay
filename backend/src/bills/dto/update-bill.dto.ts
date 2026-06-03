@@ -1,5 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { PaymentMethod } from '@prisma/client';
 import {
+  IsEnum,
   IsISO8601,
   IsOptional,
   IsString,
@@ -41,4 +43,12 @@ export class UpdateBillDto {
   @ValidateIf((_, value) => value !== undefined)
   @IsISO8601()
   dueDate?: string;
+
+  // Per-bill payment-method override. Nullable on update (send `null` to
+  // clear and fall back to the vendor's non-null `defaultPaymentMethod`
+  // at approve time); accepts the same `PaymentMethod` enum.
+  @ApiPropertyOptional({ enum: PaymentMethod, nullable: true })
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  paymentMethod?: PaymentMethod | null;
 }

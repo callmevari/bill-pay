@@ -83,11 +83,9 @@ export function VendorCombobox({
                       )}
                     />
                     <span>{vendor.name}</span>
-                    {vendor.defaultPaymentMethod ? (
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        {vendor.defaultPaymentMethod}
-                      </span>
-                    ) : null}
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {vendor.defaultPaymentMethod}
+                    </span>
                   </CommandItem>
                 ))}
               </CommandGroup>

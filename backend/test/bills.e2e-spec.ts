@@ -1,5 +1,11 @@
 import { INestApplication } from '@nestjs/common';
-import { BillStatus, Prisma, PrismaClient } from '@prisma/client';
+import {
+  BillStatus,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+  PrismaClient,
+} from '@prisma/client';
 import request from 'supertest';
 import { App } from 'supertest/types';
 
@@ -199,6 +205,89 @@ describe('Bills (e2e)', () => {
     expect(body.error.message).toMatch(/amount/);
   });
 
+  it('POST /bills rejects an unknown paymentMethod with 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/bills')
+      .set('x-user-id', actors.admin.id)
+      .send(
+        baseBillBody({
+          invoiceNumber: 'INV-PM-BAD',
+          paymentMethod: 'BANANA',
+        }),
+      );
+    expect(res.status).toBe(400);
+    const body = res.body as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toMatch(/paymentMethod/);
+  });
+
+  it('POST /bills rejects an invoice number containing forbidden punctuation', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/bills')
+      .set('x-user-id', actors.admin.id)
+      .send(
+        baseBillBody({
+          invoiceNumber: 'asd123-_ 3569 4 1 o?$%&%&!',
+        }),
+      );
+    expect(res.status).toBe(400);
+    const body = res.body as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toMatch(/invoiceNumber/);
+  });
+
+  it('POST /bills trims and collapses whitespace in the invoice number on persist', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/bills')
+      .set('x-user-id', actors.admin.id)
+      .send(baseBillBody({ invoiceNumber: '   INV   2026   0099   ' }));
+    expect(res.status).toBe(201);
+    const created = res.body as { id: string; invoiceNumber: string };
+    expect(created.invoiceNumber).toBe('INV 2026 0099');
+    const persisted = await prisma.bill.findUniqueOrThrow({
+      where: { id: created.id },
+    });
+    expect(persisted.invoiceNumber).toBe('INV 2026 0099');
+  });
+
+  it('PATCH /bills/:id updates paymentMethod on an editable DRAFT bill and reads back the new value', async () => {
+    const created = await prisma.bill.create({
+      data: {
+        invoiceNumber: 'INV-PM-EDIT',
+        vendorId: actors.vendor.id,
+        createdById: actors.admin.id,
+        status: BillStatus.DRAFT,
+        amount: new Prisma.Decimal('500.00'),
+        currency: 'USD',
+        paymentMethod: PaymentMethod.ACH,
+        invoiceDate: new Date('2026-05-01T00:00:00.000Z'),
+        dueDate: new Date('2026-05-31T00:00:00.000Z'),
+      },
+    });
+
+    const patchRes = await request(app.getHttpServer())
+      .patch(`/api/v1/bills/${created.id}`)
+      .set('x-user-id', actors.admin.id)
+      .send({ paymentMethod: 'WIRE' });
+    expect(patchRes.status).toBe(200);
+    expect(
+      (patchRes.body as { paymentMethod: PaymentMethod }).paymentMethod,
+    ).toBe(PaymentMethod.WIRE);
+
+    const readRes = await request(app.getHttpServer())
+      .get(`/api/v1/bills/${created.id}`)
+      .set('x-user-id', actors.admin.id);
+    expect(readRes.status).toBe(200);
+    expect(
+      (readRes.body as { paymentMethod: PaymentMethod }).paymentMethod,
+    ).toBe(PaymentMethod.WIRE);
+
+    const stored = await prisma.bill.findUniqueOrThrow({
+      where: { id: created.id },
+    });
+    expect(stored.paymentMethod).toBe(PaymentMethod.WIRE);
+  });
+
   it('PATCH /bills/:id returns 409 BILL_NOT_EDITABLE when the bill is in a terminal status', async () => {
     const paidBill = await prisma.bill.create({
       data: {
@@ -224,5 +313,78 @@ describe('Bills (e2e)', () => {
     };
     expect(body.error.code).toBe('BILL_NOT_EDITABLE');
     expect(body.error.details.status).toBe('PAID');
+  });
+
+  it('PATCH /bills/:id rejects amount/currency edits once a non-cancelled Payment exists', async () => {
+    const created = await prisma.bill.create({
+      data: {
+        invoiceNumber: 'INV-LOCKED-1',
+        vendorId: actors.vendor.id,
+        createdById: actors.admin.id,
+        status: BillStatus.APPROVED,
+        amount: new Prisma.Decimal('500.00'),
+        currency: 'USD',
+        paymentMethod: PaymentMethod.ACH,
+        invoiceDate: new Date('2026-05-01T00:00:00.000Z'),
+        dueDate: new Date('2026-05-31T00:00:00.000Z'),
+        payment: {
+          create: {
+            status: PaymentStatus.UNSCHEDULED,
+            method: PaymentMethod.ACH,
+            amount: new Prisma.Decimal('500.00'),
+            currency: 'USD',
+          },
+        },
+      },
+    });
+
+    // Amount edit blocked.
+    const amountRes = await request(app.getHttpServer())
+      .patch(`/api/v1/bills/${created.id}`)
+      .set('x-user-id', actors.admin.id)
+      .send({ amount: '999.99' });
+    expect(amountRes.status).toBe(409);
+    const amountBody = amountRes.body as {
+      error: { code: string; details: { lockedFields: string[] } };
+    };
+    expect(amountBody.error.code).toBe('BILL_FIELD_LOCKED_POST_PAYMENT');
+    expect(amountBody.error.details.lockedFields).toEqual(['amount']);
+
+    // Currency edit blocked.
+    const currencyRes = await request(app.getHttpServer())
+      .patch(`/api/v1/bills/${created.id}`)
+      .set('x-user-id', actors.admin.id)
+      .send({ currency: 'EUR' });
+    expect(currencyRes.status).toBe(409);
+
+    // Multi-field attempt lists every locked field.
+    const multiRes = await request(app.getHttpServer())
+      .patch(`/api/v1/bills/${created.id}`)
+      .set('x-user-id', actors.admin.id)
+      .send({ amount: '999.99', currency: 'EUR', description: 'memo' });
+    expect(multiRes.status).toBe(409);
+    expect(
+      (
+        multiRes.body as {
+          error: { details: { lockedFields: string[] } };
+        }
+      ).error.details.lockedFields,
+    ).toEqual(['amount', 'currency']);
+
+    // Description + dueDate + invoiceDate stay editable post-payment.
+    const descRes = await request(app.getHttpServer())
+      .patch(`/api/v1/bills/${created.id}`)
+      .set('x-user-id', actors.admin.id)
+      .send({
+        description: 'memo after approve',
+        dueDate: '2026-06-30T00:00:00.000Z',
+        invoiceDate: '2026-05-02T00:00:00.000Z',
+      });
+    expect(descRes.status).toBe(200);
+    const after = await prisma.bill.findUniqueOrThrow({
+      where: { id: created.id },
+    });
+    expect(after.description).toBe('memo after approve');
+    expect(after.amount.toFixed(2)).toBe('500.00');
   });
 });

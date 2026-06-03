@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Loading } from '@/components/states/loading';
 import { ErrorState } from '@/components/states/error-state';
 import { VendorCombobox } from './vendor-combobox';
@@ -21,12 +22,34 @@ import { useAllVendorsQuery } from '@/hooks/use-vendors-query';
 import { useCreateBillMutation } from '@/hooks/use-create-bill-mutation';
 import { useUpdateBillMutation } from '@/hooks/use-update-bill-mutation';
 import { ApiError } from '@/lib/api';
-import { extractValidationMessages, isoToInputDate, toWireAmount, toWireDate } from '@/lib/wire';
+import {
+  DATE_INPUT_MAX,
+  DATE_INPUT_MIN,
+  extractValidationMessages,
+  isValidDateInput,
+  isoToInputDate,
+  toWireAmount,
+  toWireDate,
+} from '@/lib/wire';
 import { formatMoney } from '@/lib/format';
-import type { Bill } from '@/lib/api-types';
+import type { Bill, PaymentMethod } from '@/lib/api-types';
 
 const SUPPORTED_CURRENCIES = ['USD', 'EUR', 'GBP', 'ARS'] as const;
 type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
+
+const PAYMENT_METHODS: readonly PaymentMethod[] = [
+  'ACH',
+  'WIRE',
+  'CHECK',
+  'CARD',
+  'OFF_PLATFORM',
+] as const;
+
+// Sentinel value for "Use vendor default" — Radix's Select cannot use the
+// empty string as an item value, so we round-trip through this constant
+// at the boundary and translate it to `null` on the wire.
+const VENDOR_DEFAULT_METHOD = '__vendor_default__';
+type PaymentMethodSelectValue = PaymentMethod | typeof VENDOR_DEFAULT_METHOD;
 
 interface LineItemDraft {
   // `key` is a stable React identifier so adding/removing rows above this
@@ -45,6 +68,7 @@ interface FormState {
   description: string;
   amount: string;
   currency: SupportedCurrency;
+  paymentMethod: PaymentMethodSelectValue;
   invoiceDate: string;
   dueDate: string;
   lineItems: LineItemDraft[];
@@ -73,6 +97,7 @@ function initialState(bill: Bill | undefined): FormState {
       description: '',
       amount: '',
       currency: 'USD',
+      paymentMethod: VENDOR_DEFAULT_METHOD,
       invoiceDate: '',
       dueDate: '',
       lineItems: [],
@@ -85,6 +110,7 @@ function initialState(bill: Bill | undefined): FormState {
     currency: (SUPPORTED_CURRENCIES.includes(bill.currency as SupportedCurrency)
       ? bill.currency
       : 'USD') as SupportedCurrency,
+    paymentMethod: bill.paymentMethod ?? VENDOR_DEFAULT_METHOD,
     amount: bill.amount,
     invoiceDate: isoToInputDate(bill.invoiceDate),
     dueDate: isoToInputDate(bill.dueDate),
@@ -113,19 +139,37 @@ interface FieldErrors {
   dueDate?: string;
 }
 
+// Mirrors `CreateBillDto.INVOICE_NUMBER_PATTERN` so the form catches
+// bad characters as the user types instead of bouncing them off the
+// backend on submit.
+const INVOICE_NUMBER_PATTERN = /^[\w\-._/# ()]+$/;
+
 function validate(state: FormState): FieldErrors {
   const errors: FieldErrors = {};
   if (!state.vendorId) errors.vendorId = 'Select a vendor.';
-  if (!state.invoiceNumber.trim()) errors.invoiceNumber = 'Invoice number is required.';
+  const trimmedInvoiceNumber = state.invoiceNumber.trim();
+  if (!trimmedInvoiceNumber) {
+    errors.invoiceNumber = 'Invoice number is required.';
+  } else if (!INVOICE_NUMBER_PATTERN.test(trimmedInvoiceNumber)) {
+    errors.invoiceNumber =
+      'Only letters, digits, spaces, and the characters - _ . / # ( ) are allowed.';
+  }
   if (!state.amount.trim()) {
     errors.amount = 'Amount is required.';
   } else {
     const num = Number(state.amount);
     if (!Number.isFinite(num) || num < 0) errors.amount = 'Amount must be a non-negative number.';
   }
-  if (!state.invoiceDate) errors.invoiceDate = 'Invoice date is required.';
-  if (!state.dueDate) errors.dueDate = 'Due date is required.';
-  if (state.invoiceDate && state.dueDate && state.dueDate < state.invoiceDate) {
+  if (!state.invoiceDate) {
+    errors.invoiceDate = 'Invoice date is required.';
+  } else if (!isValidDateInput(state.invoiceDate)) {
+    errors.invoiceDate = 'Enter a valid date between 1900 and 9999.';
+  }
+  if (!state.dueDate) {
+    errors.dueDate = 'Due date is required.';
+  } else if (!isValidDateInput(state.dueDate)) {
+    errors.dueDate = 'Enter a valid date between 1900 and 9999.';
+  } else if (state.invoiceDate && state.dueDate < state.invoiceDate) {
     errors.dueDate = 'Due date must be on or after invoice date.';
   }
   return errors;
@@ -140,6 +184,40 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
   const [state, setState] = useState<FormState>(() => initialState(bill));
   const [submitted, setSubmitted] = useState(false);
   const [serverError, setServerError] = useState<ApiError | null>(null);
+  // Track which fields the user has interacted with so per-field errors
+  // appear in real time without lighting up "Required" on every empty
+  // field the moment the page loads. After Submit, treat everything as
+  // touched so the bottom of the form does not surprise the user.
+  const [touched, setTouched] = useState<Set<keyof FieldErrors>>(() => new Set());
+  const markTouched = (field: keyof FieldErrors): void => {
+    setTouched((prev) => {
+      if (prev.has(field)) return prev;
+      const next = new Set(prev);
+      next.add(field);
+      return next;
+    });
+  };
+  const showError = (field: keyof FieldErrors): boolean =>
+    submitted || touched.has(field);
+
+  // Post-payment field lock. Once a non-cancelled Payment row exists
+  // for the bill, the operator already committed to a number and a
+  // rail; editing amount / currency / paymentMethod here would silently
+  // drift from the Payment row. The backend enforces the same rule
+  // with `BILL_FIELD_LOCKED_POST_PAYMENT` so a direct PATCH cannot
+  // bypass it either. `paymentMethod` is captured separately because
+  // the field lives behind a Tooltip + Select that need their own
+  // disabled flag.
+  const hasActivePayment =
+    mode === 'edit' &&
+    bill !== undefined &&
+    bill.payment !== null &&
+    bill.payment !== undefined &&
+    bill.payment.status !== 'CANCELED';
+  const paymentMethodLocked = hasActivePayment;
+  const financialFieldsLocked = hasActivePayment;
+  const lockedFieldHint =
+    'A Payment row already exists. This field cannot be changed.';
 
   // Keep the form in sync if the underlying bill ref changes (rare in
   // practice — the edit route loads once — but cheap insurance against a
@@ -150,6 +228,15 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
 
   const errors = useMemo(() => validate(state), [state]);
   const hasErrors = Object.keys(errors).length > 0;
+  // Compare the current form state to the initial snapshot so the
+  // "Save changes" button stays disabled when nothing actually
+  // changed. Keeps a no-op PATCH out of the audit trail and prevents
+  // a misleading success toast on an unchanged form.
+  const initialFormState = useMemo(() => initialState(bill), [bill]);
+  const isDirty = useMemo(
+    () => JSON.stringify(state) !== JSON.stringify(initialFormState),
+    [state, initialFormState],
+  );
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   const lineItemSum = useMemo(
@@ -192,6 +279,12 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
           description: state.description.trim() === '' ? null : state.description.trim(),
           amount: toWireAmount(state.amount),
           currency: state.currency,
+          // Omit the field entirely on create when "Use vendor default" is
+          // picked — the backend treats undefined as "no override" and
+          // falls back to the vendor at approve time.
+          ...(state.paymentMethod === VENDOR_DEFAULT_METHOD
+            ? {}
+            : { paymentMethod: state.paymentMethod }),
           invoiceDate: toWireDate(state.invoiceDate),
           dueDate: toWireDate(state.dueDate),
           lineItems: state.lineItems
@@ -211,16 +304,33 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
 
     if (!bill) return;
 
+    // Build the PATCH payload defensively. The financial fields
+    // (amount / currency / paymentMethod) are locked once a non-
+    // cancelled Payment exists; including them in the body — even
+    // unchanged — trips the backend's BILL_FIELD_LOCKED_POST_PAYMENT
+    // guard. Omit them in that case so PATCH carries only the fields
+    // the user can actually edit.
+    const input: Parameters<
+      typeof updateMutation.mutateAsync
+    >[0]['input'] = {
+      description: state.description.trim() === '' ? null : state.description.trim(),
+      invoiceDate: toWireDate(state.invoiceDate),
+      dueDate: toWireDate(state.dueDate),
+    };
+    if (!financialFieldsLocked) {
+      input.amount = toWireAmount(state.amount);
+      input.currency = state.currency;
+      // PATCH semantics: `null` clears an existing override; a method
+      // value pins it. We always send one of the two so submitting
+      // "Use vendor default" clears a previously-set override.
+      input.paymentMethod =
+        state.paymentMethod === VENDOR_DEFAULT_METHOD ? null : state.paymentMethod;
+    }
+
     try {
       const updated = await updateMutation.mutateAsync({
         billId: bill.id,
-        input: {
-          description: state.description.trim() === '' ? null : state.description.trim(),
-          amount: toWireAmount(state.amount),
-          currency: state.currency,
-          invoiceDate: toWireDate(state.invoiceDate),
-          dueDate: toWireDate(state.dueDate),
-        },
+        input,
       });
       router.push(`/bills/${updated.id}`);
     } catch (error) {
@@ -259,14 +369,25 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
           role="alert"
           className="flex flex-col gap-1 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-foreground"
         >
-          <p className="font-medium text-destructive">{serverError.message}</p>
-          {validationMessages.length > 0 ? (
-            <ul className="list-disc pl-5 text-xs text-muted-foreground">
-              {validationMessages.map((message) => (
-                <li key={message}>{message}</li>
-              ))}
-            </ul>
-          ) : null}
+          {/* Avoid restating the same line twice when the backend's
+              `message` is a single class-validator failure that already
+              shows up in `validationMessages`. Multi-error responses
+              keep the title + bullet list shape. */}
+          {validationMessages.length === 1 &&
+          validationMessages[0] === serverError.message ? (
+            <p className="font-medium text-destructive">{serverError.message}</p>
+          ) : (
+            <>
+              <p className="font-medium text-destructive">{serverError.message}</p>
+              {validationMessages.length > 0 ? (
+                <ul className="list-disc pl-5 text-xs text-muted-foreground">
+                  {validationMessages.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
 
@@ -274,12 +395,15 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
         <Field
           id="bill-vendor"
           label="Vendor"
-          error={submitted ? errors.vendorId : undefined}
+          error={showError('vendorId') ? errors.vendorId : undefined}
           required
         >
           <VendorCombobox
             value={state.vendorId}
-            onChange={(next) => updateField('vendorId', next)}
+            onChange={(next) => {
+              updateField('vendorId', next);
+              markTouched('vendorId');
+            }}
             vendors={vendors}
           />
         </Field>
@@ -287,14 +411,17 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
         <Field
           id="bill-invoice-number"
           label="Invoice number"
-          error={submitted ? errors.invoiceNumber : undefined}
+          error={showError('invoiceNumber') ? errors.invoiceNumber : undefined}
           required
           hint={mode === 'edit' ? 'Locked after creation.' : undefined}
         >
           <Input
             id="bill-invoice-number"
             value={state.invoiceNumber}
-            onChange={(event) => updateField('invoiceNumber', event.target.value)}
+            onChange={(event) => {
+              updateField('invoiceNumber', event.target.value);
+              markTouched('invoiceNumber');
+            }}
             disabled={mode === 'edit'}
             placeholder="INV-2026-0001"
             autoComplete="off"
@@ -313,65 +440,176 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
         <Field
           id="bill-amount"
           label="Amount"
-          error={submitted ? errors.amount : undefined}
+          error={showError('amount') ? errors.amount : undefined}
           required
+          hint={financialFieldsLocked ? lockedFieldHint : undefined}
         >
-          <Input
-            id="bill-amount"
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            min={0}
-            value={state.amount}
-            onChange={(event) => updateField('amount', event.target.value)}
-            placeholder="0.00"
-          />
+          {financialFieldsLocked ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <Input id="bill-amount" type="text" value={state.amount} disabled />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>{lockedFieldHint}</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Input
+              id="bill-amount"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min={0}
+              value={state.amount}
+              onChange={(event) => {
+                updateField('amount', event.target.value);
+                markTouched('amount');
+              }}
+              placeholder="0.00"
+            />
+          )}
         </Field>
 
-        <Field id="bill-currency" label="Currency" required>
-          <Select
-            value={state.currency}
-            onValueChange={(next) => updateField('currency', next as SupportedCurrency)}
-          >
-            <SelectTrigger id="bill-currency">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SUPPORTED_CURRENCIES.map((code) => (
-                <SelectItem key={code} value={code}>
-                  {code}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <Field
+          id="bill-currency"
+          label="Currency"
+          required
+          hint={financialFieldsLocked ? lockedFieldHint : undefined}
+        >
+          {financialFieldsLocked ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <Select value={state.currency} disabled>
+                    <SelectTrigger id="bill-currency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SUPPORTED_CURRENCIES.map((code) => (
+                        <SelectItem key={code} value={code}>
+                          {code}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>{lockedFieldHint}</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Select
+              value={state.currency}
+              onValueChange={(next) => updateField('currency', next as SupportedCurrency)}
+            >
+              <SelectTrigger id="bill-currency">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SUPPORTED_CURRENCIES.map((code) => (
+                  <SelectItem key={code} value={code}>
+                    {code}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </Field>
+
+        <Field
+          id="bill-payment-method"
+          label="Payment method"
+          hint={
+            paymentMethodLocked
+              ? 'The Payment was already created. The method cannot be changed.'
+              : 'Overrides the vendor default when the Payment is created on approve.'
+          }
+        >
+          {paymentMethodLocked ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <Select value={state.paymentMethod} disabled>
+                    <SelectTrigger id="bill-payment-method">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={VENDOR_DEFAULT_METHOD}>
+                        Use vendor default
+                      </SelectItem>
+                      {PAYMENT_METHODS.map((method) => (
+                        <SelectItem key={method} value={method}>
+                          {method}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                The Payment was already created. The method cannot be
+                changed.
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Select
+              value={state.paymentMethod}
+              onValueChange={(next) =>
+                updateField('paymentMethod', next as PaymentMethodSelectValue)
+              }
+            >
+              <SelectTrigger id="bill-payment-method">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={VENDOR_DEFAULT_METHOD}>Use vendor default</SelectItem>
+                {PAYMENT_METHODS.map((method) => (
+                  <SelectItem key={method} value={method}>
+                    {method}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </Field>
 
         <Field
           id="bill-invoice-date"
           label="Invoice date"
-          error={submitted ? errors.invoiceDate : undefined}
+          error={showError('invoiceDate') ? errors.invoiceDate : undefined}
           required
         >
           <Input
             id="bill-invoice-date"
             type="date"
+            min={DATE_INPUT_MIN}
+            max={DATE_INPUT_MAX}
             value={state.invoiceDate}
-            onChange={(event) => updateField('invoiceDate', event.target.value)}
+            onChange={(event) => {
+              updateField('invoiceDate', event.target.value);
+              markTouched('invoiceDate');
+              // Cross-field rule: also re-surface the dueDate error if
+              // the new invoiceDate makes the existing dueDate invalid.
+              if (touched.has('dueDate')) markTouched('dueDate');
+            }}
           />
         </Field>
 
         <Field
           id="bill-due-date"
           label="Due date"
-          error={submitted ? errors.dueDate : undefined}
+          error={showError('dueDate') ? errors.dueDate : undefined}
           required
         >
           <Input
             id="bill-due-date"
             type="date"
+            min={state.invoiceDate || DATE_INPUT_MIN}
+            max={DATE_INPUT_MAX}
             value={state.dueDate}
-            onChange={(event) => updateField('dueDate', event.target.value)}
-            min={state.invoiceDate || undefined}
+            onChange={(event) => {
+              updateField('dueDate', event.target.value);
+              markTouched('dueDate');
+            }}
           />
         </Field>
       </section>
@@ -468,13 +706,11 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
                   </div>
                 );
               })}
-              <p className="text-right text-xs text-muted-foreground">
-                Line item subtotal:{' '}
-                <span className="font-mono tabular-nums">
-                  {formatMoney(lineItemSum.toFixed(2), state.currency)}
-                </span>{' '}
-                (informational — bill amount is the field above).
-              </p>
+              <FormReconciliation
+                lineItemsTotal={lineItemSum}
+                billAmount={state.amount}
+                currency={state.currency}
+              />
             </div>
           )}
         </section>
@@ -488,9 +724,31 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
         <Button type="button" variant="outline" size="sm" onClick={() => router.back()} disabled={isPending}>
           Cancel
         </Button>
-        <Button type="submit" size="sm" disabled={isPending}>
-          {mode === 'create' ? 'Create bill' : 'Save changes'}
-        </Button>
+        {(() => {
+          const label = mode === 'create' ? 'Create bill' : 'Save changes';
+          const disabledForErrors = hasErrors;
+          const disabledForClean = mode === 'edit' && !isDirty;
+          const disabled = isPending || disabledForErrors || disabledForClean;
+          const tooltip = disabledForErrors
+            ? 'Fix the errors above before saving.'
+            : disabledForClean
+              ? 'No changes to save.'
+              : null;
+          const button = (
+            <Button type="submit" size="sm" disabled={disabled}>
+              {label}
+            </Button>
+          );
+          if (!tooltip || !disabled) return button;
+          return (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0}>{button}</span>
+              </TooltipTrigger>
+              <TooltipContent>{tooltip}</TooltipContent>
+            </Tooltip>
+          );
+        })()}
       </div>
     </form>
   );
@@ -525,3 +783,76 @@ function Field({ id, label, hint, error, required, className, children }: FieldP
   );
 }
 
+
+function FormReconciliation({
+  lineItemsTotal,
+  billAmount,
+  currency,
+}: {
+  lineItemsTotal: number;
+  billAmount: string;
+  currency: string;
+}): React.JSX.Element {
+  // Mirrors the reconciliation row on the bill detail page. Surfacing
+  // the divergence at write time (and at read time) prevents the bill
+  // total / line items breakdown from drifting silently — the reviewer
+  // sees that we treat both numbers as sources of truth on purpose.
+  const billNum = Number(billAmount);
+  const billValid = Number.isFinite(billNum) && billAmount.trim() !== '';
+  const delta = billValid ? billNum - lineItemsTotal : 0;
+  const matches = billValid && Math.abs(delta) < 0.005;
+  return (
+    <div className="flex items-end justify-end gap-6 rounded-md border border-border bg-background px-3 py-2 text-sm">
+      <ReconRow
+        label="Line items total"
+        value={formatMoney(lineItemsTotal.toFixed(2), currency)}
+      />
+      <ReconRow
+        label="Bill amount"
+        value={billValid ? formatMoney(billAmount, currency) : '—'}
+      />
+      <ReconRow
+        label="Difference"
+        value={billValid ? formatMoney(Math.abs(delta).toFixed(2), currency) : '—'}
+        tone={!billValid ? 'muted' : matches ? 'muted' : 'warning'}
+        hint={
+          !billValid || matches
+            ? undefined
+            : delta > 0
+              ? 'Bill amount exceeds line items (tax, fees, etc).'
+              : 'Line items exceed bill amount.'
+        }
+      />
+    </div>
+  );
+}
+
+function ReconRow({
+  label,
+  value,
+  tone = 'muted',
+  hint,
+}: {
+  label: string;
+  value: string;
+  tone?: 'muted' | 'warning';
+  hint?: string;
+}): React.JSX.Element {
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span
+        className={
+          tone === 'warning'
+            ? 'font-mono text-sm font-semibold text-warning tabular-nums'
+            : 'font-mono text-sm tabular-nums'
+        }
+        title={hint}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}

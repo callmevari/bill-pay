@@ -180,15 +180,23 @@ export class PaymentsService {
   async markAsPaid(id: string, actor: AuthUser): Promise<PaymentResponseDto> {
     const paidAt = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
+      // UNSCHEDULED is allowed — covers the OFF_PLATFORM case (paid
+      // externally with cash / check) and back-dated rail payments
+      // recorded after the fact. Real AP products (Ramp, Bill.com)
+      // let the operator skip the Schedule -> Initiated path when
+      // there is no rail to coordinate.
       const { fromStatus, payment } = await this.casPaymentTransition(
         tx,
         id,
-        [PaymentStatus.SCHEDULED, PaymentStatus.INITIATED],
+        [
+          PaymentStatus.UNSCHEDULED,
+          PaymentStatus.SCHEDULED,
+          PaymentStatus.INITIATED,
+        ],
         PaymentStatus.PAID,
         { paidAt },
       );
 
-      // Log payment action before propagating (lifecycle causality).
       await this.logPaymentTransition(
         tx,
         id,
@@ -198,11 +206,17 @@ export class PaymentsService {
         PaymentStatus.PAID,
       );
 
-      // Bill -> PAID (from SCHEDULED).
+      // Bill propagation: from UNSCHEDULED the bill is APPROVED and
+      // jumps straight to PAID; from SCHEDULED / INITIATED the bill is
+      // currently SCHEDULED and follows the normal cascade.
+      const billAllowedFrom =
+        fromStatus === PaymentStatus.UNSCHEDULED
+          ? [BillStatus.APPROVED]
+          : [BillStatus.SCHEDULED];
       await this.casBillFromPayment(
         tx,
         payment.billId,
-        [BillStatus.SCHEDULED],
+        billAllowedFrom,
         BillStatus.PAID,
         actor,
         'bill.paid',
@@ -216,10 +230,20 @@ export class PaymentsService {
   async cancel(id: string, actor: AuthUser): Promise<PaymentResponseDto> {
     const canceledAt = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
+      // UNSCHEDULED is allowed — operators routinely decide not to pay
+      // an approved-but-unscheduled bill (vendor dispute, duplicate
+      // invoice, internal cancellation) without ever scheduling it.
+      // The cancel cascades the bill to ARCHIVED in every case: the
+      // system creates exactly one Payment per Bill at approve time
+      // and there is no path to re-create it, so a canceled payment
+      // leaves the bill with no forward motion. Surfacing an APPROVED
+      // bill with a CANCELED payment row reads as a stuck workflow;
+      // archiving it makes the audit trail honest about the dead-end.
       const { fromStatus, payment } = await this.casPaymentTransition(
         tx,
         id,
         [
+          PaymentStatus.UNSCHEDULED,
           PaymentStatus.SCHEDULED,
           PaymentStatus.INITIATED,
           PaymentStatus.FAILED,
@@ -228,7 +252,6 @@ export class PaymentsService {
         { canceledAt },
       );
 
-      // Log payment action before propagating (lifecycle causality).
       await this.logPaymentTransition(
         tx,
         id,
@@ -238,15 +261,36 @@ export class PaymentsService {
         PaymentStatus.CANCELED,
       );
 
-      // Bill SCHEDULED -> APPROVED (un-schedules the bill).
-      await this.casBillFromPayment(
-        tx,
-        payment.billId,
-        [BillStatus.SCHEDULED],
+      // Cascade-archive the bill. The bill can currently be in any
+      // non-terminal state depending on where the payment was; cover
+      // every legal origin.
+      const fresh = await tx.bill.findUniqueOrThrow({
+        where: { id: payment.billId },
+        select: { status: true },
+      });
+      const billAllowedFrom: BillStatus[] = [
         BillStatus.APPROVED,
-        actor,
-        'bill.payment_canceled',
-      );
+        BillStatus.SCHEDULED,
+      ];
+      if (billAllowedFrom.includes(fresh.status)) {
+        await tx.bill.update({
+          where: { id: payment.billId },
+          data: { status: BillStatus.ARCHIVED, archivedAt: new Date() },
+        });
+        await tx.activityLog.create({
+          data: {
+            entityType: ActivityEntityType.BILL,
+            entityId: payment.billId,
+            actorId: actor.id,
+            actorRole: actor.role,
+            action: 'bill.archived',
+            fromStatus: fresh.status,
+            toStatus: BillStatus.ARCHIVED,
+            metadata: { triggeredBy: 'payment.cancel' },
+            createdAt: new Date(),
+          },
+        });
+      }
 
       return tx.payment.findUniqueOrThrow({ where: { id } });
     });
