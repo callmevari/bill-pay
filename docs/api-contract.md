@@ -348,7 +348,7 @@ Body: `{ ids: string[] }`. Each item runs `POST /bills/:id/archive`. `PAID` and 
 
 #### `POST /bills/bulk/edit` — Admin only
 
-Body: `{ ids: string[], fields: { dueDate?: ISO-8601, description?: string | null } }`. `fields` must contain at least one of `dueDate` / `description`; an empty object → `400 VALIDATION_ERROR`. `paymentMethod` is intentionally not bulk-editable — it lives on the linked `Payment`, not on the Bill. Terminal bills (`PAID`, `REJECTED`, `ARCHIVED`) fail per-item with `BILL_NOT_EDITABLE`.
+Body: `{ ids: string[], fields: { dueDate?: ISO-8601, invoiceDate?: ISO-8601, description?: string | null } }`. `fields` must contain at least one of `dueDate` / `invoiceDate` / `description`; an empty object → `400 VALIDATION_ERROR`. `amount` is intentionally not bulk-editable even though `product-scope.md` lists it — setting the same monetary value across N distinct invoices is rarely the right operation and AP teams that need batch amount changes reach for CSV import (out of scope here). `paymentMethod` is also excluded — it lives on the linked `Payment`, not on the Bill. Terminal bills (`PAID`, `REJECTED`, `ARCHIVED`) fail per-item with `BILL_NOT_EDITABLE`.
 
 ### Payments
 

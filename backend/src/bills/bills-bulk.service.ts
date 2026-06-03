@@ -35,17 +35,25 @@ export class BillsBulkService {
     // the description; omit the key to leave it alone. An empty
     // `fields` payload (no value-bearing keys) is rejected with 400 so
     // the per-item loop never sees a no-op.
-    const translated: { description?: string | null; dueDate?: string } = {};
+    const translated: {
+      description?: string | null;
+      dueDate?: string;
+      invoiceDate?: string;
+    } = {};
     if (dto.fields.description !== undefined) {
       translated.description = dto.fields.description;
     }
     if (dto.fields.dueDate !== undefined) {
       translated.dueDate = dto.fields.dueDate;
     }
+    if (dto.fields.invoiceDate !== undefined) {
+      translated.invoiceDate = dto.fields.invoiceDate;
+    }
     if (Object.keys(translated).length === 0) {
       throw new BadRequestException({
         code: ErrorCode.VALIDATION_ERROR,
-        message: 'fields must contain at least one of: dueDate, description.',
+        message:
+          'fields must contain at least one of: dueDate, invoiceDate, description.',
       });
     }
     return runBulk<BillResponseDto>(dto.ids, (id) =>

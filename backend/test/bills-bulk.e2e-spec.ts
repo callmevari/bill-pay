@@ -222,6 +222,7 @@ describe('Bills bulk (e2e)', () => {
         ids: [draftBill.id, approvedBill.id, paidBill.id],
         fields: {
           dueDate: '2026-08-15T00:00:00.000Z',
+          invoiceDate: '2026-08-01T00:00:00.000Z',
           description: 'Updated in bulk',
         },
       });
@@ -247,9 +248,15 @@ describe('Bills bulk (e2e)', () => {
     });
     expect(draftAfter?.description).toBe('Updated in bulk');
     expect(draftAfter?.dueDate.toISOString()).toBe('2026-08-15T00:00:00.000Z');
+    expect(draftAfter?.invoiceDate.toISOString()).toBe(
+      '2026-08-01T00:00:00.000Z',
+    );
     expect(approvedAfter?.description).toBe('Updated in bulk');
     expect(approvedAfter?.dueDate.toISOString()).toBe(
       '2026-08-15T00:00:00.000Z',
+    );
+    expect(approvedAfter?.invoiceDate.toISOString()).toBe(
+      '2026-08-01T00:00:00.000Z',
     );
     expect(paidAfter?.description).toBeNull();
 

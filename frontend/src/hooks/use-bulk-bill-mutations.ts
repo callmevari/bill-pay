@@ -68,6 +68,7 @@ export interface BulkEditBillsVariables {
   ids: string[];
   fields: {
     dueDate?: string;
+    invoiceDate?: string;
     description?: string | null;
   };
 }

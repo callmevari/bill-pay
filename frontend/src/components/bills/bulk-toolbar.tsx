@@ -108,6 +108,7 @@ export function BulkToolbar({
   const [rejectNotes, setRejectNotes] = useState('');
   const [scheduledFor, setScheduledFor] = useState(() => tomorrowYmd());
   const [editDueDate, setEditDueDate] = useState('');
+  const [editInvoiceDate, setEditInvoiceDate] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editEnableDescription, setEditEnableDescription] = useState(false);
 
@@ -485,17 +486,23 @@ export function BulkToolbar({
           if (!open) {
             setDialog(null);
             setEditDueDate('');
+            setEditInvoiceDate('');
             setEditDescription('');
             setEditEnableDescription(false);
           }
         }}
         title={`Edit ${selectedIds.length} bill${selectedIds.length === 1 ? '' : 's'}`}
-        description="Only due date and description can be bulk-edited. Leave a field blank to keep it untouched; terminal bills will fail per item."
+        description="Due date, invoice date, and description can be bulk-edited. Leave a field blank to keep it untouched; terminal bills will fail per item."
         confirmLabel="Apply changes"
         pending={editMutation.isPending}
         onConfirm={async () => {
-          const fields: { dueDate?: string; description?: string | null } = {};
+          const fields: {
+            dueDate?: string;
+            invoiceDate?: string;
+            description?: string | null;
+          } = {};
           if (editDueDate) fields.dueDate = `${editDueDate}T00:00:00.000Z`;
+          if (editInvoiceDate) fields.invoiceDate = `${editInvoiceDate}T00:00:00.000Z`;
           if (editEnableDescription) {
             fields.description = editDescription.trim() === '' ? null : editDescription.trim();
           }
@@ -507,12 +514,25 @@ export function BulkToolbar({
           const response = await editMutation.mutateAsync({ ids: selectedIds, fields });
           setDialog(null);
           setEditDueDate('');
+          setEditInvoiceDate('');
           setEditDescription('');
           setEditEnableDescription(false);
           presentBills('Edit bills', response);
         }}
       >
         <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="bulk-edit-invoice-date">Invoice date</Label>
+            <Input
+              id="bulk-edit-invoice-date"
+              type="date"
+              value={editInvoiceDate}
+              onChange={(event) => setEditInvoiceDate(event.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Useful for batch typo correction across an invoice run.
+            </p>
+          </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="bulk-edit-due-date">Due date</Label>
             <Input

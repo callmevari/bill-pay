@@ -15,6 +15,7 @@ body:json {
     "ids": ["{{billId}}"],
     "fields": {
       "dueDate": "2026-09-30T00:00:00.000Z",
+      "invoiceDate": "2026-09-01T00:00:00.000Z",
       "description": "Updated in bulk"
     }
   }
@@ -22,8 +23,15 @@ body:json {
 
 docs {
   Admin only. Applies the same field updates to every non-terminal
-  bill in `ids`. Allowed fields: `dueDate`, `description`. At least
-  one must be present; an empty `fields` object is rejected with 400.
-  Terminal bills (PAID/REJECTED/ARCHIVED) fail per item with
-  BILL_NOT_EDITABLE.
+  bill in `ids`. Allowed fields: `dueDate`, `invoiceDate`,
+  `description`. At least one must be present; an empty `fields`
+  object is rejected with 400. Terminal bills
+  (PAID/REJECTED/ARCHIVED) fail per item with BILL_NOT_EDITABLE.
+
+  `amount` is intentionally NOT bulk-editable. The spec lists it, but
+  bulk-setting the same monetary value across N distinct invoices is
+  almost never the correct operation; AP teams that need batch
+  amount changes should reach for a CSV import flow (out of scope).
+  `paymentMethod` is also excluded — it lives on the Payment row,
+  not the Bill, once the bill is approved.
 }
