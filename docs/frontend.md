@@ -177,3 +177,14 @@ Every `useQuery` consumer renders these instead of inlining their own loading/er
 - **Per-item result modal**. After ANY bulk mutation returns, `BulkResultModal` opens, listing each `result` with its outcome (success or `ApiError.code + message`). Failed ids are copyable to the clipboard. Missing `summary` fields fall back to a computed count so the modal cannot crash on a malformed envelope.
 - **CSV export**. `ExportMenu` lives next to the Columns popover in the bills toolbar. Click → `apiFetch('/exports/bills.csv?<current filters>', { raw: true })` returns the raw `Response`; the menu parses `Content-Disposition` for the filename (falls back to `bills-YYYY-MM-DD.csv` UTC if missing), converts the body to a `Blob`, triggers a download via an anchor click, and revokes the object URL. Toasts on start and completion; the failure path runs through `describeMutationError`.
 - **Activity refinements**. Beyond the `methodSource` badge above, `bill.archived` entries that carry `metadata.cancelledApprovals` / `metadata.cancelledPayment` render a short "Side effects" line listing what cascaded, so the audit trail explains the archive's downstream effects without the reader having to click into each canceled child.
+- **Bill amount ↔ line items reconciliation**. `bill.amount` and `sum(lineItems.total)` are kept independent on purpose — real-world invoices carry tax, fees, shipping, and discounts that are not always line-itemized, and some vendors send a total-only invoice with no breakdown at all. The bill detail page renders a reconciliation row at the foot of the line items table showing both totals and the absolute difference; matching numbers render muted, divergent numbers render in the warning accent with a tooltip naming the most likely cause (`Bill amount exceeds line items (tax, fees, etc).` or the reverse). The backend does NOT enforce a sum check on writes — both fields are sources of truth in their own right.
+
+### Bill detail — line items / amount reconciliation
+
+Why these two numbers can diverge:
+
+- AP invoices regularly carry tax, fees, shipping, processing surcharges, and discounts that are not captured as additional line items (the vendor's invoice may surface them only on the bottom of the PDF).
+- Some vendors send a "total only" invoice — the line items block on our side stays empty and `bill.amount` is the entire story.
+- Some teams use line items as an internal cost-allocation breakdown (per cost center) whose components don't have to sum to the invoice's external total.
+
+Industry-standard AP products (Ramp, Bill.com, Stripe Invoicing) all treat `amount` as the source of truth for "what's owed" and let the line-items breakdown be informational. We mirror that. The reconciliation row exists so an auditor can see at a glance whether the breakdown accounts for the full amount, without us silently rejecting the bill at write time.

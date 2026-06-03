@@ -73,3 +73,8 @@ docker run --rm -p 3000:3000 \
   -e NEXT_PUBLIC_API_BASE_URL="http://localhost:3001/api/v1" \
   billpay-web
 ```
+
+## Domain decisions worth flagging
+
+- **`bill.amount` and `sum(lineItems.total)` may diverge — by design.** Real AP invoices carry tax, fees, shipping, and discounts that are not always captured as line items, and some vendors send total-only invoices with no breakdown at all. `bill.amount` is the source of truth for what's owed; the line items breakdown is informational. The bill detail page renders a reconciliation row at the foot of the line items table showing both totals plus the difference (muted when they match, amber when they don't) so the divergence is visible to an auditor rather than hidden. Industry-standard AP products (Ramp, Bill.com, Stripe Invoicing) handle this the same way. Rationale lives in `docs/frontend.md → Bill detail — line items / amount reconciliation`.
+- **Payment method on a bill is a hint, not the live method.** `bill.paymentMethod` is consulted at approve time when the `Payment` row is created (`bill.paymentMethod ?? vendor.defaultPaymentMethod ?? 'ACH'`) and recorded on the `payment.created` activity row as `metadata.methodSource`. Once the payment exists, its `method` is the source of truth — editing the bill's `paymentMethod` afterwards does not retroactively change the payment, and the form locks the field once the bill has left DRAFT / PENDING_APPROVAL. To switch a payment's method post-creation, cancel the payment and re-approve.
