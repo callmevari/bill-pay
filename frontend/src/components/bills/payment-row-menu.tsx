@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { DATE_INPUT_MAX, DATE_INPUT_MIN, isValidDateInput } from '@/lib/wire';
 import {
   useCancelPaymentMutation,
   useMarkPaymentPaidMutation,
@@ -153,8 +154,9 @@ export function PaymentRowMenu({ payment }: PaymentRowMenuProps): React.JSX.Elem
         description="Pick the date the payment should be released."
         confirmLabel="Schedule"
         pending={scheduleMutation.isPending}
+        confirmDisabled={!isValidDateInput(scheduledFor)}
         onConfirm={async () => {
-          if (!scheduledFor) return;
+          if (!isValidDateInput(scheduledFor)) return;
           await scheduleMutation.mutateAsync({
             paymentId: payment.id,
             scheduledFor,
@@ -167,6 +169,8 @@ export function PaymentRowMenu({ payment }: PaymentRowMenuProps): React.JSX.Elem
           <Input
             id="row-schedule-date"
             type="date"
+            min={DATE_INPUT_MIN}
+            max={DATE_INPUT_MAX}
             value={scheduledFor}
             onChange={(event) => setScheduledFor(event.target.value)}
           />

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { DATE_INPUT_MAX, DATE_INPUT_MIN, isValidDateInput } from '@/lib/wire';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   useCancelPaymentMutation,
@@ -148,8 +149,9 @@ export function PaymentActions({ payment }: PaymentActionsProps): React.JSX.Elem
         description="Pick the date the payment should be released. Past dates are allowed for back-dating."
         confirmLabel="Schedule"
         pending={scheduleMutation.isPending}
+        confirmDisabled={!isValidDateInput(scheduledFor)}
         onConfirm={async () => {
-          if (!scheduledFor) return;
+          if (!isValidDateInput(scheduledFor)) return;
           await scheduleMutation.mutateAsync({
             paymentId: payment.id,
             scheduledFor,
@@ -162,6 +164,8 @@ export function PaymentActions({ payment }: PaymentActionsProps): React.JSX.Elem
           <Input
             id="schedule-date"
             type="date"
+            min={DATE_INPUT_MIN}
+            max={DATE_INPUT_MAX}
             value={scheduledFor}
             onChange={(event) => setScheduledFor(event.target.value)}
           />

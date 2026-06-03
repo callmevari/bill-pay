@@ -22,7 +22,15 @@ import { useAllVendorsQuery } from '@/hooks/use-vendors-query';
 import { useCreateBillMutation } from '@/hooks/use-create-bill-mutation';
 import { useUpdateBillMutation } from '@/hooks/use-update-bill-mutation';
 import { ApiError } from '@/lib/api';
-import { extractValidationMessages, isoToInputDate, toWireAmount, toWireDate } from '@/lib/wire';
+import {
+  DATE_INPUT_MAX,
+  DATE_INPUT_MIN,
+  extractValidationMessages,
+  isValidDateInput,
+  isoToInputDate,
+  toWireAmount,
+  toWireDate,
+} from '@/lib/wire';
 import { formatMoney } from '@/lib/format';
 import type { Bill, PaymentMethod } from '@/lib/api-types';
 
@@ -152,9 +160,16 @@ function validate(state: FormState): FieldErrors {
     const num = Number(state.amount);
     if (!Number.isFinite(num) || num < 0) errors.amount = 'Amount must be a non-negative number.';
   }
-  if (!state.invoiceDate) errors.invoiceDate = 'Invoice date is required.';
-  if (!state.dueDate) errors.dueDate = 'Due date is required.';
-  if (state.invoiceDate && state.dueDate && state.dueDate < state.invoiceDate) {
+  if (!state.invoiceDate) {
+    errors.invoiceDate = 'Invoice date is required.';
+  } else if (!isValidDateInput(state.invoiceDate)) {
+    errors.invoiceDate = 'Enter a valid date between 1900 and 9999.';
+  }
+  if (!state.dueDate) {
+    errors.dueDate = 'Due date is required.';
+  } else if (!isValidDateInput(state.dueDate)) {
+    errors.dueDate = 'Enter a valid date between 1900 and 9999.';
+  } else if (state.invoiceDate && state.dueDate < state.invoiceDate) {
     errors.dueDate = 'Due date must be on or after invoice date.';
   }
   return errors;
@@ -566,6 +581,8 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
           <Input
             id="bill-invoice-date"
             type="date"
+            min={DATE_INPUT_MIN}
+            max={DATE_INPUT_MAX}
             value={state.invoiceDate}
             onChange={(event) => {
               updateField('invoiceDate', event.target.value);
@@ -586,12 +603,13 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
           <Input
             id="bill-due-date"
             type="date"
+            min={state.invoiceDate || DATE_INPUT_MIN}
+            max={DATE_INPUT_MAX}
             value={state.dueDate}
             onChange={(event) => {
               updateField('dueDate', event.target.value);
               markTouched('dueDate');
             }}
-            min={state.invoiceDate || undefined}
           />
         </Field>
       </section>

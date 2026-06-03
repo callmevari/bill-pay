@@ -21,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { BulkResultModal } from './bulk-result-modal';
+import { DATE_INPUT_MAX, DATE_INPUT_MIN, isValidDateInput } from '@/lib/wire';
 import {
   useBulkApproveBillsMutation,
   useBulkArchiveBillsMutation,
@@ -534,8 +535,9 @@ export function BulkToolbar({
         description={`Pick the date the ${paymentIds.length} selected payment${paymentIds.length === 1 ? '' : 's'} should be released.`}
         confirmLabel="Schedule"
         pending={scheduleMutation.isPending}
+        confirmDisabled={!isValidDateInput(scheduledFor)}
         onConfirm={async () => {
-          if (!scheduledFor) return;
+          if (!isValidDateInput(scheduledFor)) return;
           const response = await scheduleMutation.mutateAsync({
             ids: paymentIds,
             scheduledFor,
@@ -549,6 +551,8 @@ export function BulkToolbar({
           <Input
             id="bulk-schedule-date"
             type="date"
+            min={DATE_INPUT_MIN}
+            max={DATE_INPUT_MAX}
             value={scheduledFor}
             onChange={(event) => setScheduledFor(event.target.value)}
           />
@@ -570,7 +574,9 @@ export function BulkToolbar({
         confirmLabel="Apply changes"
         pending={editMutation.isPending}
         confirmDisabled={
-          !editDueDate && !editInvoiceDate && editDescription.trim() === ''
+          (!editDueDate && !editInvoiceDate && editDescription.trim() === '') ||
+          (editDueDate !== '' && !isValidDateInput(editDueDate)) ||
+          (editInvoiceDate !== '' && !isValidDateInput(editInvoiceDate))
         }
         onConfirm={async () => {
           const fields: {
@@ -600,6 +606,8 @@ export function BulkToolbar({
             <Input
               id="bulk-edit-invoice-date"
               type="date"
+              min={DATE_INPUT_MIN}
+              max={DATE_INPUT_MAX}
               value={editInvoiceDate}
               onChange={(event) => setEditInvoiceDate(event.target.value)}
             />
@@ -612,6 +620,8 @@ export function BulkToolbar({
             <Input
               id="bulk-edit-due-date"
               type="date"
+              min={DATE_INPUT_MIN}
+              max={DATE_INPUT_MAX}
               value={editDueDate}
               onChange={(event) => setEditDueDate(event.target.value)}
             />
