@@ -22,6 +22,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { BulkResultModal } from './bulk-result-modal';
 import { DATE_INPUT_MAX, DATE_INPUT_MIN, isValidDateInput } from '@/lib/wire';
+import { describeMutationError } from '@/lib/mutation-errors';
 import {
   useBulkApproveBillsMutation,
   useBulkArchiveBillsMutation,
@@ -260,6 +261,33 @@ export function BulkToolbar({
     onClearSelection();
   };
 
+  // Wrap every mutateAsync call so a top-level failure (network, 500,
+  // unexpected 403) surfaces a toast instead of escaping as an unhandled
+  // rejection. The per-item failures inside a successful 200 envelope
+  // are NOT errors here — they flow through `presentBills` / `presentPayments`
+  // and end up in the summary toast + details modal. This catch is only
+  // for the case where the request itself never completed.
+  const runBills = async (
+    title: string,
+    run: () => Promise<BulkResponse<Bill>>,
+  ): Promise<void> => {
+    try {
+      presentBills(title, await run());
+    } catch (error) {
+      toast.error(describeMutationError(error, `${title} failed.`));
+    }
+  };
+  const runPayments = async (
+    title: string,
+    run: () => Promise<BulkResponse<BillPayment>>,
+  ): Promise<void> => {
+    try {
+      presentPayments(title, await run());
+    } catch (error) {
+      toast.error(describeMutationError(error, `${title} failed.`));
+    }
+  };
+
   const isAnyPending =
     approveMutation.isPending ||
     archiveMutation.isPending ||
@@ -314,10 +342,11 @@ export function BulkToolbar({
                   size="sm"
                   variant="outline"
                   disabled={eligible.submit === 0 || isAnyPending}
-                  onClick={async () => {
-                    const response = await submitMutation.mutateAsync({ ids: selectedIds });
-                    presentBills('Submit for approval', response);
-                  }}
+                  onClick={() =>
+                    void runBills('Submit for approval', () =>
+                      submitMutation.mutateAsync({ ids: selectedIds }),
+                    )
+                  }
                 >
                   <Send className="size-4" />
                   Submit for approval
@@ -351,10 +380,11 @@ export function BulkToolbar({
                 <Button
                   size="sm"
                   disabled={eligible.approve === 0 || isAnyPending}
-                  onClick={async () => {
-                    const response = await approveMutation.mutateAsync({ ids: selectedIds });
-                    presentBills('Approve bills', response);
-                  }}
+                  onClick={() =>
+                    void runBills('Approve bills', () =>
+                      approveMutation.mutateAsync({ ids: selectedIds }),
+                    )
+                  }
                 >
                   <Check className="size-4" />
                   Approve
@@ -404,10 +434,11 @@ export function BulkToolbar({
                   size="sm"
                   variant="outline"
                   disabled={eligible.release === 0 || isAnyPending}
-                  onClick={async () => {
-                    const response = await releaseMutation.mutateAsync({ ids: paymentIds });
-                    presentPayments('Release payments', response);
-                  }}
+                  onClick={() =>
+                    void runPayments('Release payments', () =>
+                      releaseMutation.mutateAsync({ ids: paymentIds }),
+                    )
+                  }
                 >
                   <PlayCircle className="size-4" />
                   Release
@@ -422,10 +453,11 @@ export function BulkToolbar({
                   size="sm"
                   variant="outline"
                   disabled={eligible.markPaid === 0 || isAnyPending}
-                  onClick={async () => {
-                    const response = await markPaidMutation.mutateAsync({ ids: paymentIds });
-                    presentPayments('Mark payments as paid', response);
-                  }}
+                  onClick={() =>
+                    void runPayments('Mark payments as paid', () =>
+                      markPaidMutation.mutateAsync({ ids: paymentIds }),
+                    )
+                  }
                 >
                   <Wallet className="size-4" />
                   Mark as paid
@@ -440,10 +472,11 @@ export function BulkToolbar({
                   size="sm"
                   variant="outline"
                   disabled={eligible.cancel === 0 || isAnyPending}
-                  onClick={async () => {
-                    const response = await cancelMutation.mutateAsync({ ids: paymentIds });
-                    presentPayments('Cancel payments', response);
-                  }}
+                  onClick={() =>
+                    void runPayments('Cancel payments', () =>
+                      cancelMutation.mutateAsync({ ids: paymentIds }),
+                    )
+                  }
                 >
                   <Ban className="size-4" />
                   Cancel
@@ -458,10 +491,11 @@ export function BulkToolbar({
                   size="sm"
                   variant="outline"
                   disabled={eligible.retry === 0 || isAnyPending}
-                  onClick={async () => {
-                    const response = await retryMutation.mutateAsync({ ids: paymentIds });
-                    presentPayments('Retry payments', response);
-                  }}
+                  onClick={() =>
+                    void runPayments('Retry payments', () =>
+                      retryMutation.mutateAsync({ ids: paymentIds }),
+                    )
+                  }
                 >
                   <RefreshCw className="size-4" />
                   Retry
@@ -479,10 +513,11 @@ export function BulkToolbar({
               size="sm"
               variant="outline"
               disabled={eligible.archive === 0 || isAnyPending}
-              onClick={async () => {
-                const response = await archiveMutation.mutateAsync({ ids: selectedIds });
-                presentBills('Archive bills', response);
-              }}
+              onClick={() =>
+                void runBills('Archive bills', () =>
+                  archiveMutation.mutateAsync({ ids: selectedIds }),
+                )
+              }
             >
               <Archive className="size-4" />
               Archive
@@ -506,13 +541,14 @@ export function BulkToolbar({
         destructive
         pending={rejectMutation.isPending}
         onConfirm={async () => {
-          const response = await rejectMutation.mutateAsync({
-            ids: selectedIds,
-            notes: rejectNotes.trim() ? rejectNotes.trim() : undefined,
-          });
+          await runBills('Reject bills', () =>
+            rejectMutation.mutateAsync({
+              ids: selectedIds,
+              notes: rejectNotes.trim() ? rejectNotes.trim() : undefined,
+            }),
+          );
           setDialog(null);
           setRejectNotes('');
-          presentBills('Reject bills', response);
         }}
       >
         <div className="flex flex-col gap-1.5">
@@ -538,12 +574,13 @@ export function BulkToolbar({
         confirmDisabled={!isValidDateInput(scheduledFor)}
         onConfirm={async () => {
           if (!isValidDateInput(scheduledFor)) return;
-          const response = await scheduleMutation.mutateAsync({
-            ids: paymentIds,
-            scheduledFor,
-          });
+          await runPayments('Schedule payments', () =>
+            scheduleMutation.mutateAsync({
+              ids: paymentIds,
+              scheduledFor,
+            }),
+          );
           setDialog(null);
-          presentPayments('Schedule payments', response);
         }}
       >
         <div className="flex flex-col gap-1.5">
@@ -592,12 +629,13 @@ export function BulkToolbar({
             setDialog(null);
             return;
           }
-          const response = await editMutation.mutateAsync({ ids: selectedIds, fields });
+          await runBills('Edit bills', () =>
+            editMutation.mutateAsync({ ids: selectedIds, fields }),
+          );
           setDialog(null);
           setEditDueDate('');
           setEditInvoiceDate('');
           setEditDescription('');
-          presentBills('Edit bills', response);
         }}
       >
         <div className="flex flex-col gap-3">

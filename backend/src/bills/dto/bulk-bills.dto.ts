@@ -52,8 +52,12 @@ export class BulkBillIdsDto {
 // truly need batch amount changes reach for a CSV import flow that is
 // out of scope for the MVP. See `docs/backend.md` for the rationale.
 //
-// `paymentMethod` is intentionally NOT bulk-editable in this MVP:
-// payment method lives on the linked `Payment` row, not on the Bill.
+// `paymentMethod` is intentionally NOT bulk-editable in this MVP. The
+// per-bill override exists on the Bill, but the post-payment field lock
+// freezes it the moment a Payment is created — bulk-clearing the field
+// across a mixed set (some pre-approve, some post-approve) would 207
+// every other row. AP teams that need a method override do it bill-by-
+// bill during creation/approval where they can see the lock state.
 export class BulkEditBillFieldsDto {
   @ApiPropertyOptional({ format: 'date-time' })
   @ValidateIf((_, value) => value !== undefined)
