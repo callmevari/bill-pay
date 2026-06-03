@@ -140,7 +140,7 @@ export class BillsService {
       try {
         created = await tx.bill.create({
           data: {
-            invoiceNumber: dto.invoiceNumber,
+            invoiceNumber: normalizeInvoiceNumber(dto.invoiceNumber),
             vendorId: dto.vendorId,
             createdById: actor.id,
             description: dto.description ?? null,
@@ -935,4 +935,13 @@ export class BillsService {
     }
     return { [field]: order };
   }
+}
+
+// Trim outer whitespace and collapse internal runs of spaces. Vendor
+// invoice numbers occasionally land with stray padding ("  INV-001  ")
+// or double-spaces; persisting the cleaned form keeps search + the
+// unique constraint stable. Allowed-character validation lives on the
+// DTO (`Matches(INVOICE_NUMBER_PATTERN)`).
+function normalizeInvoiceNumber(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
 }

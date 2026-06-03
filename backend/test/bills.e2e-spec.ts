@@ -220,6 +220,35 @@ describe('Bills (e2e)', () => {
     expect(body.error.message).toMatch(/paymentMethod/);
   });
 
+  it('POST /bills rejects an invoice number containing forbidden punctuation', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/bills')
+      .set('x-user-id', actors.admin.id)
+      .send(
+        baseBillBody({
+          invoiceNumber: 'asd123-_ 3569 4 1 o?$%&%&!',
+        }),
+      );
+    expect(res.status).toBe(400);
+    const body = res.body as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toMatch(/invoiceNumber/);
+  });
+
+  it('POST /bills trims and collapses whitespace in the invoice number on persist', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/bills')
+      .set('x-user-id', actors.admin.id)
+      .send(baseBillBody({ invoiceNumber: '   INV   2026   0099   ' }));
+    expect(res.status).toBe(201);
+    const created = res.body as { id: string; invoiceNumber: string };
+    expect(created.invoiceNumber).toBe('INV 2026 0099');
+    const persisted = await prisma.bill.findUniqueOrThrow({
+      where: { id: created.id },
+    });
+    expect(persisted.invoiceNumber).toBe('INV 2026 0099');
+  });
+
   it('PATCH /bills/:id updates paymentMethod on an editable DRAFT bill and reads back the new value', async () => {
     const created = await prisma.bill.create({
       data: {

@@ -359,7 +359,7 @@ function BillHeader({ bill, vendorName }: { bill: Bill; vendorName: string }): R
           ) : null}
           {bill.paymentMethod && !bill.payment ? (
             <p className="text-xs text-muted-foreground">
-              Payment method (on approve):{' '}
+              Payment method (overrides vendor default):{' '}
               <span className="font-medium text-foreground">
                 {bill.paymentMethod}
               </span>
