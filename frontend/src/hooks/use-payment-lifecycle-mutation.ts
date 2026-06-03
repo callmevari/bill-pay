@@ -189,3 +189,34 @@ export function useRetryPaymentMutation(): UseMutationResult<
     errorFallback: 'Could not retry this payment.',
   });
 }
+
+interface ChangeMethodVariables {
+  paymentId: string;
+  method: import('@/lib/api-types').PaymentMethod;
+}
+
+export function useChangePaymentMethodMutation(): UseMutationResult<
+  BillPayment,
+  ApiError,
+  ChangeMethodVariables
+> {
+  const queryClient = useQueryClient();
+  return useMutation<BillPayment, ApiError, ChangeMethodVariables>({
+    mutationFn: ({ paymentId, method }) =>
+      apiFetch<BillPayment>(`/payments/${paymentId}/change-method`, {
+        method: 'POST',
+        body: { method },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['bill'] });
+      void queryClient.invalidateQueries({ queryKey: ['bills'] });
+      void queryClient.invalidateQueries({ queryKey: ['payments'] });
+      void queryClient.invalidateQueries({ queryKey: ['bill-activity'] });
+      void queryClient.invalidateQueries({ queryKey: ['payment-activity'] });
+      toast.success('Payment method updated.');
+    },
+    onError: (error) => {
+      toast.error(describeMutationError(error, 'Could not change payment method.'));
+    },
+  });
+}

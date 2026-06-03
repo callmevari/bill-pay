@@ -105,9 +105,8 @@ describe('PaymentsService', () => {
     });
   });
 
-  describe('markAsPaid (SCHEDULED|INITIATED -> PAID)', () => {
+  describe('markAsPaid (UNSCHEDULED|SCHEDULED|INITIATED -> PAID)', () => {
     it.each([
-      PaymentStatus.UNSCHEDULED,
       PaymentStatus.PAID,
       PaymentStatus.FAILED,
       PaymentStatus.CANCELED,
@@ -119,17 +118,16 @@ describe('PaymentsService', () => {
     });
   });
 
-  describe('cancel (SCHEDULED|INITIATED|FAILED -> CANCELED)', () => {
-    it.each([
-      PaymentStatus.UNSCHEDULED,
-      PaymentStatus.PAID,
-      PaymentStatus.CANCELED,
-    ])('rejects from %s', async (status) => {
-      prisma.payment.findUnique.mockResolvedValue(paymentRow(status));
-      await expect(service.cancel('p1', actor)).rejects.toBeInstanceOf(
-        ConflictException,
-      );
-    });
+  describe('cancel (UNSCHEDULED|SCHEDULED|INITIATED|FAILED -> CANCELED)', () => {
+    it.each([PaymentStatus.PAID, PaymentStatus.CANCELED])(
+      'rejects from %s',
+      async (status) => {
+        prisma.payment.findUnique.mockResolvedValue(paymentRow(status));
+        await expect(service.cancel('p1', actor)).rejects.toBeInstanceOf(
+          ConflictException,
+        );
+      },
+    );
   });
 
   describe('retry (FAILED -> SCHEDULED)', () => {

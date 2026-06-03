@@ -229,6 +229,8 @@ function LineItemsBlock({ bill }: { bill: Bill }): React.JSX.Element {
         </div>
       )}
 
+      {bill.lineItems.length > 0 ? <LineItemsReconciliation bill={bill} /> : null}
+
       <LineItemFormDialog
         open={addOpen}
         onOpenChange={setAddOpen}
@@ -261,6 +263,76 @@ function LineItemsBlock({ bill }: { bill: Bill }): React.JSX.Element {
         onConfirm={() => void handleRemove()}
       />
     </section>
+  );
+}
+
+function LineItemsReconciliation({ bill }: { bill: Bill }): React.JSX.Element {
+  // Real-world invoices carry tax, fees, shipping, and discounts that
+  // aren't always captured as line items. We keep `bill.amount` as the
+  // source of truth for what's owed and surface the divergence inline
+  // so an auditor can see at a glance whether the line-item breakdown
+  // accounts for the full amount.
+  const lineItemsTotal = bill.lineItems.reduce(
+    (sum, item) => sum + Number(item.total),
+    0,
+  );
+  const billAmount = Number(bill.amount);
+  const delta = billAmount - lineItemsTotal;
+  const matches = Math.abs(delta) < 0.005;
+
+  return (
+    <div className="flex items-end justify-end gap-6 rounded-lg border border-border bg-card px-4 py-3 text-sm">
+      <ReconRow
+        label="Line items total"
+        value={formatMoney(lineItemsTotal.toFixed(2), bill.currency)}
+      />
+      <ReconRow
+        label="Bill amount"
+        value={formatMoney(bill.amount, bill.currency)}
+      />
+      <ReconRow
+        label="Difference"
+        value={formatMoney(Math.abs(delta).toFixed(2), bill.currency)}
+        tone={matches ? 'muted' : 'warning'}
+        hint={
+          matches
+            ? undefined
+            : delta > 0
+              ? 'Bill amount exceeds line items (tax, fees, etc).'
+              : 'Line items exceed bill amount.'
+        }
+      />
+    </div>
+  );
+}
+
+function ReconRow({
+  label,
+  value,
+  tone = 'muted',
+  hint,
+}: {
+  label: string;
+  value: string;
+  tone?: 'muted' | 'warning';
+  hint?: string;
+}): React.JSX.Element {
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span
+        className={
+          tone === 'warning'
+            ? 'font-mono text-sm font-semibold text-warning tabular-nums'
+            : 'font-mono text-sm tabular-nums'
+        }
+        title={hint}
+      >
+        {value}
+      </span>
+    </div>
   );
 }
 

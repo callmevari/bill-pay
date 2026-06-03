@@ -22,7 +22,7 @@ Live HTTP surface of the Bill Pay API. Grows module by module; each entry matche
 | `POST /bills/bulk/approve` | ✅ | ✅ | ❌ |
 | `POST /bills/bulk/archive`, `POST /bills/bulk/edit` | ✅ | ❌ | ❌ |
 | `GET /payments`, `GET /payments/:id`, `GET /payments/:id/activity` | ✅ | ✅ | ✅ |
-| `POST /payments/:id/{schedule,unschedule,release,mark-as-paid,cancel,retry}` | ✅ | ❌ | ❌ |
+| `POST /payments/:id/{schedule,unschedule,release,mark-as-paid,cancel,retry,change-method}` | ✅ | ❌ | ❌ |
 | `POST /payments/bulk/{release,mark-as-paid,cancel}` | ✅ | ❌ | ❌ |
 | `GET /exports/bills.csv` | ✅ | ✅ | ✅ |
 

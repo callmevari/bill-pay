@@ -213,17 +213,27 @@ describe('Payments bulk (e2e)', () => {
       paymentStatus: PaymentStatus.SCHEDULED,
       invoiceNumber: 'INV-CAN-1',
     });
+    // UNSCHEDULED payments are also cancelable now ("we decided not to
+    // pay this approved bill"); both rows should succeed.
     const unscheduled = await seedBillWithPayment({
       billStatus: BillStatus.APPROVED,
       paymentStatus: PaymentStatus.UNSCHEDULED,
       invoiceNumber: 'INV-CAN-2',
       scheduledFor: undefined,
     });
+    // PAID is the terminal-success status — cannot be canceled.
+    const paid = await seedBillWithPayment({
+      billStatus: BillStatus.PAID,
+      paymentStatus: PaymentStatus.PAID,
+      invoiceNumber: 'INV-CAN-3',
+    });
 
     const res = await request(app.getHttpServer())
       .post('/api/v1/payments/bulk/cancel')
       .set('x-user-id', actors.admin.id)
-      .send({ ids: [scheduled.payment.id, unscheduled.payment.id] });
+      .send({
+        ids: [scheduled.payment.id, unscheduled.payment.id, paid.payment.id],
+      });
 
     expect(res.status).toBe(200);
     const body = res.body as {
@@ -234,8 +244,9 @@ describe('Payments bulk (e2e)', () => {
       }[];
       summary: { total: number; succeeded: number; failed: number };
     };
-    expect(body.summary).toEqual({ total: 2, succeeded: 1, failed: 1 });
+    expect(body.summary).toEqual({ total: 3, succeeded: 2, failed: 1 });
     expect(body.results[0].ok).toBe(true);
-    expect(body.results[1].error?.code).toBe('PAYMENT_INVALID_TRANSITION');
+    expect(body.results[1].ok).toBe(true);
+    expect(body.results[2].error?.code).toBe('PAYMENT_INVALID_TRANSITION');
   });
 });

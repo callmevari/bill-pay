@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Loading } from '@/components/states/loading';
 import { ErrorState } from '@/components/states/error-state';
 import { VendorCombobox } from './vendor-combobox';
@@ -157,6 +158,19 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
   const [state, setState] = useState<FormState>(() => initialState(bill));
   const [submitted, setSubmitted] = useState(false);
   const [serverError, setServerError] = useState<ApiError | null>(null);
+
+  // The bill's `paymentMethod` is only consulted at approve time — it
+  // is the default for the next Payment row. Once a Payment row exists
+  // in an active state (anything except CANCELED), editing the bill's
+  // `paymentMethod` no longer affects that live payment; the rail-level
+  // change has to happen via `POST /payments/:id/change-method` on the
+  // payment block. Lock the Select in that window so the form does not
+  // pretend to control something it doesn't.
+  const hasActivePayment =
+    bill?.payment !== null &&
+    bill?.payment !== undefined &&
+    bill.payment.status !== 'CANCELED';
+  const paymentMethodLocked = mode === 'edit' && hasActivePayment;
 
   // Keep the form in sync if the underlying bill ref changes (rare in
   // practice — the edit route loads once — but cheap insurance against a
@@ -377,26 +391,60 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
         <Field
           id="bill-payment-method"
           label="Payment method"
-          hint="Overrides the vendor default at approve time."
+          hint={
+            paymentMethodLocked
+              ? 'A payment row is already active. Use "Change method" on the payment block to switch the rail.'
+              : 'Overrides the vendor default when the next Payment is created on approve.'
+          }
         >
-          <Select
-            value={state.paymentMethod}
-            onValueChange={(next) =>
-              updateField('paymentMethod', next as PaymentMethodSelectValue)
-            }
-          >
-            <SelectTrigger id="bill-payment-method">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={VENDOR_DEFAULT_METHOD}>Use vendor default</SelectItem>
-              {PAYMENT_METHODS.map((method) => (
-                <SelectItem key={method} value={method}>
-                  {method}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {paymentMethodLocked ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <Select value={state.paymentMethod} disabled>
+                    <SelectTrigger id="bill-payment-method">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={VENDOR_DEFAULT_METHOD}>
+                        Use vendor default
+                      </SelectItem>
+                      {PAYMENT_METHODS.map((method) => (
+                        <SelectItem key={method} value={method}>
+                          {method}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                A payment row is already active. Use the &ldquo;Change
+                method&rdquo; action on the payment block (below) to
+                switch the rail — that updates the live payment
+                directly.
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Select
+              value={state.paymentMethod}
+              onValueChange={(next) =>
+                updateField('paymentMethod', next as PaymentMethodSelectValue)
+              }
+            >
+              <SelectTrigger id="bill-payment-method">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={VENDOR_DEFAULT_METHOD}>Use vendor default</SelectItem>
+                {PAYMENT_METHODS.map((method) => (
+                  <SelectItem key={method} value={method}>
+                    {method}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </Field>
 
         <Field
@@ -521,13 +569,11 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
                   </div>
                 );
               })}
-              <p className="text-right text-xs text-muted-foreground">
-                Line item subtotal:{' '}
-                <span className="font-mono tabular-nums">
-                  {formatMoney(lineItemSum.toFixed(2), state.currency)}
-                </span>{' '}
-                (informational — bill amount is the field above).
-              </p>
+              <FormReconciliation
+                lineItemsTotal={lineItemSum}
+                billAmount={state.amount}
+                currency={state.currency}
+              />
             </div>
           )}
         </section>
@@ -578,3 +624,76 @@ function Field({ id, label, hint, error, required, className, children }: FieldP
   );
 }
 
+
+function FormReconciliation({
+  lineItemsTotal,
+  billAmount,
+  currency,
+}: {
+  lineItemsTotal: number;
+  billAmount: string;
+  currency: string;
+}): React.JSX.Element {
+  // Mirrors the reconciliation row on the bill detail page. Surfacing
+  // the divergence at write time (and at read time) prevents the bill
+  // total / line items breakdown from drifting silently — the reviewer
+  // sees that we treat both numbers as sources of truth on purpose.
+  const billNum = Number(billAmount);
+  const billValid = Number.isFinite(billNum) && billAmount.trim() !== '';
+  const delta = billValid ? billNum - lineItemsTotal : 0;
+  const matches = billValid && Math.abs(delta) < 0.005;
+  return (
+    <div className="flex items-end justify-end gap-6 rounded-md border border-border bg-background px-3 py-2 text-sm">
+      <ReconRow
+        label="Line items total"
+        value={formatMoney(lineItemsTotal.toFixed(2), currency)}
+      />
+      <ReconRow
+        label="Bill amount"
+        value={billValid ? formatMoney(billAmount, currency) : '—'}
+      />
+      <ReconRow
+        label="Difference"
+        value={billValid ? formatMoney(Math.abs(delta).toFixed(2), currency) : '—'}
+        tone={!billValid ? 'muted' : matches ? 'muted' : 'warning'}
+        hint={
+          !billValid || matches
+            ? undefined
+            : delta > 0
+              ? 'Bill amount exceeds line items (tax, fees, etc).'
+              : 'Line items exceed bill amount.'
+        }
+      />
+    </div>
+  );
+}
+
+function ReconRow({
+  label,
+  value,
+  tone = 'muted',
+  hint,
+}: {
+  label: string;
+  value: string;
+  tone?: 'muted' | 'warning';
+  hint?: string;
+}): React.JSX.Element {
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span
+        className={
+          tone === 'warning'
+            ? 'font-mono text-sm font-semibold text-warning tabular-nums'
+            : 'font-mono text-sm tabular-nums'
+        }
+        title={hint}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
