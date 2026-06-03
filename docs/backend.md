@@ -96,7 +96,7 @@ UNSCHEDULED ──► SCHEDULED ──► INITIATED ──► PAID
 | `UNSCHEDULED` | `SCHEDULED` | `POST /payments/:id/schedule` | Set `scheduledFor`; bill → `SCHEDULED` |
 | `SCHEDULED` | `UNSCHEDULED` | `POST /payments/:id/unschedule` | Clear `scheduledFor`; bill → `APPROVED` |
 | `SCHEDULED` | `INITIATED` | `POST /payments/:id/release` | Set `initiatedAt` |
-| `INITIATED`/`SCHEDULED` | `PAID` | `POST /payments/:id/mark-as-paid` | Set `paidAt`; bill → `PAID` |
+| `UNSCHEDULED`/`SCHEDULED`/`INITIATED` | `PAID` | `POST /payments/:id/mark-as-paid` | Set `paidAt`; bill → `PAID` (from `APPROVED` or `SCHEDULED`). `UNSCHEDULED` covers the OFF_PLATFORM / back-dated path — operator marks the bill as paid without coordinating a rail. |
 | `INITIATED` | `FAILED` | (simulated; reachable via retry-then-fail in seed only) | Set `failedAt`, `failureReason` |
 | `FAILED` | `SCHEDULED` | `POST /payments/:id/retry` | Clear `failedAt`/`failureReason`; restore `scheduledFor` |
 | `UNSCHEDULED`/`SCHEDULED`/`INITIATED`/`FAILED` | `CANCELED` | `POST /payments/:id/cancel` | Set `canceledAt`; **bill auto-archives** (`bill.archived` activity row with `metadata.triggeredBy: 'payment.cancel'`). The system creates exactly one Payment per Bill at approve time, so a canceled Payment leaves the Bill with no forward motion — archiving makes the dead-end honest in the audit trail. |

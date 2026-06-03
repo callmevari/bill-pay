@@ -392,7 +392,7 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
           label="Payment method"
           hint={
             paymentMethodLocked
-              ? 'A Payment row already exists; the method on the payment is the source of truth.'
+              ? 'The Payment was already created. The method cannot be changed.'
               : 'Overrides the vendor default when the Payment is created on approve.'
           }
         >
@@ -418,9 +418,8 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
                 </div>
               </TooltipTrigger>
               <TooltipContent>
-                The payment was already created on approve. Its method
-                is shown on the payment block below and is the source
-                of truth from now on.
+                The Payment was already created. The method cannot be
+                changed.
               </TooltipContent>
             </Tooltip>
           ) : (

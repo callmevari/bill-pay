@@ -271,6 +271,26 @@ describe('Payments lifecycle (e2e)', () => {
     expect(billAfter.status).toBe(BillStatus.PAID);
   });
 
+  it('mark-as-paid direct from UNSCHEDULED (OFF_PLATFORM path): payment PAID, bill APPROVED -> PAID', async () => {
+    const { bill, payment } = await seedBillWithPayment({
+      billStatus: BillStatus.APPROVED,
+      paymentStatus: PaymentStatus.UNSCHEDULED,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/payments/${payment.id}/mark-as-paid`)
+      .set('x-user-id', actors.admin.id);
+    expect(res.status).toBe(200);
+    const body = res.body as { status: string; paidAt: string | null };
+    expect(body.status).toBe('PAID');
+    expect(body.paidAt).not.toBeNull();
+
+    const billAfter = await prisma.bill.findUniqueOrThrow({
+      where: { id: bill.id },
+    });
+    expect(billAfter.status).toBe(BillStatus.PAID);
+  });
+
   it('cancel from FAILED: payment CANCELED, bill auto-archived', async () => {
     const { bill, payment } = await seedBillWithPayment({
       billStatus: BillStatus.SCHEDULED,

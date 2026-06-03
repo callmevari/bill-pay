@@ -180,10 +180,19 @@ export class PaymentsService {
   async markAsPaid(id: string, actor: AuthUser): Promise<PaymentResponseDto> {
     const paidAt = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
+      // UNSCHEDULED is allowed — covers the OFF_PLATFORM case (paid
+      // externally with cash / check) and back-dated rail payments
+      // recorded after the fact. Real AP products (Ramp, Bill.com)
+      // let the operator skip the Schedule -> Initiated path when
+      // there is no rail to coordinate.
       const { fromStatus, payment } = await this.casPaymentTransition(
         tx,
         id,
-        [PaymentStatus.SCHEDULED, PaymentStatus.INITIATED],
+        [
+          PaymentStatus.UNSCHEDULED,
+          PaymentStatus.SCHEDULED,
+          PaymentStatus.INITIATED,
+        ],
         PaymentStatus.PAID,
         { paidAt },
       );
@@ -197,11 +206,17 @@ export class PaymentsService {
         PaymentStatus.PAID,
       );
 
-      // Bill SCHEDULED -> PAID.
+      // Bill propagation: from UNSCHEDULED the bill is APPROVED and
+      // jumps straight to PAID; from SCHEDULED / INITIATED the bill is
+      // currently SCHEDULED and follows the normal cascade.
+      const billAllowedFrom =
+        fromStatus === PaymentStatus.UNSCHEDULED
+          ? [BillStatus.APPROVED]
+          : [BillStatus.SCHEDULED];
       await this.casBillFromPayment(
         tx,
         payment.billId,
-        [BillStatus.SCHEDULED],
+        billAllowedFrom,
         BillStatus.PAID,
         actor,
         'bill.paid',

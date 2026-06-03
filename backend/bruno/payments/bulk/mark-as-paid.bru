@@ -17,7 +17,9 @@ body:json {
 }
 
 docs {
-  Admin only. Marks every supplied SCHEDULED or INITIATED payment as
-  PAID and cascades the linked bill to PAID. Items in other statuses
-  fail per item with PAYMENT_INVALID_TRANSITION.
+  Admin only. Marks every supplied UNSCHEDULED / SCHEDULED / INITIATED
+  payment as PAID and cascades the linked Bill to PAID
+  (APPROVED -> PAID from UNSCHEDULED, SCHEDULED -> PAID otherwise).
+  Items in PAID / FAILED / CANCELED fail per item with
+  PAYMENT_INVALID_TRANSITION.
 }
