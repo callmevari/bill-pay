@@ -23,10 +23,13 @@ docs {
   required-non-null fields (amount/currency/invoiceDate/dueDate) returns
   400 VALIDATION_ERROR.
 
-  `paymentMethod` is editable while the bill is non-terminal. Send a
-  PaymentMethod value to override the vendor default for this bill, or
-  `null` to clear the override and fall back to the vendor at approve
-  time. Example body lines:
+  `paymentMethod` is consulted at approve time only. Editing it while
+  the bill is DRAFT or PENDING_APPROVAL changes which rail the Payment
+  is created with on approve. Editing it AFTER approve updates the
+  bill column but does NOT affect the live Payment.method (which is
+  the source of truth from approve onward); the UI locks the field at
+  that point. Send `null` to clear the override and fall back to the
+  vendor default. Example body lines:
       "paymentMethod": "WIRE"
       "paymentMethod": null
 }

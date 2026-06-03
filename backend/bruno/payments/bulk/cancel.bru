@@ -17,8 +17,8 @@ body:json {
 }
 
 docs {
-  Admin only. Cancels every supplied in-flight payment (SCHEDULED /
-  INITIATED / FAILED -> CANCELED) and cascades the linked bill from
-  SCHEDULED back to APPROVED. UNSCHEDULED / PAID / CANCELED items fail
-  per item with PAYMENT_INVALID_TRANSITION.
+  Admin only. Cancels every supplied in-flight payment
+  (UNSCHEDULED / SCHEDULED / INITIATED / FAILED -> CANCELED) and
+  cascades each linked Bill to ARCHIVED in the same transaction.
+  PAID / CANCELED items fail per item with PAYMENT_INVALID_TRANSITION.
 }
