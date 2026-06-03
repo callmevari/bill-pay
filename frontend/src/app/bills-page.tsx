@@ -256,14 +256,16 @@ export function BillsPage(): React.JSX.Element {
         onSelectionStateChange={setRowSelection}
         toolbarLeading={<ExportMenu searchString={exportSearch} />}
         toolbarSlot={
-          selectedIds.length > 0 ? (
-            <BulkToolbar
-              selectedIds={selectedIds}
-              bills={bills}
-              activeTab={activeTab}
-              onClearSelection={clearSelection}
-            />
-          ) : null
+          /* Always mount BulkToolbar so its `result` state, the result
+             modal, and the toast `Details` action survive the
+             selection-clear that follows every bulk run. The component
+             hides its UI internally when `selectedIds` is empty. */
+          <BulkToolbar
+            selectedIds={selectedIds}
+            bills={bills}
+            activeTab={activeTab}
+            onClearSelection={clearSelection}
+          />
         }
       />
 
