@@ -29,6 +29,47 @@ export function BillsPage(): React.JSX.Element {
   const hydrated = useRoleHydrated();
   const canCreate = useCan('bill.create');
 
+  // Any role with at least one bulk-capable action gets the selection
+  // column + toolbar. Viewer has none, so the checkboxes vanish entirely
+  // (the noise of "select rows you can't act on" is worse than no
+  // selection at all).
+  const canBulkSubmit = useCan('bill.submitForApproval');
+  const canBulkApprove = useCan('bill.bulkApprove');
+  const canBulkReject = useCan('bill.reject');
+  const canBulkArchive = useCan('bill.bulkArchive');
+  const canBulkEdit = useCan('bill.bulkEdit');
+  const canBulkSchedule = useCan('payment.schedule');
+  const canBulkRelease = useCan('payment.bulkRelease');
+  const canBulkMarkPaid = useCan('payment.bulkMarkAsPaid');
+  const canBulkCancel = useCan('payment.bulkCancel');
+  const canBulkRetry = useCan('payment.retry');
+  // Resolved lazily once `activeTab` is known below — mirrors the per-tab
+  // button surface in `BulkToolbar` so the selection column only appears
+  // on tabs where the role has at least one applicable action.
+  const tabActions: Readonly<Record<BillTabId, boolean>> = {
+    overview:
+      canBulkSubmit ||
+      canBulkEdit ||
+      canBulkApprove ||
+      canBulkReject ||
+      canBulkSchedule ||
+      canBulkRelease ||
+      canBulkMarkPaid ||
+      canBulkCancel ||
+      canBulkRetry ||
+      canBulkArchive,
+    drafts: canBulkSubmit || canBulkEdit || canBulkArchive,
+    'for-approvals': canBulkApprove || canBulkReject || canBulkArchive,
+    'for-payment':
+      canBulkSchedule ||
+      canBulkRelease ||
+      canBulkMarkPaid ||
+      canBulkCancel ||
+      canBulkRetry ||
+      canBulkArchive,
+    history: false,
+  };
+
   // Tab persists in the URL when explicit, otherwise falls back to the
   // last-used tab from localStorage so a refresh keeps the user in place.
   const urlTab = params.get('tab') as BillTabId | null;
@@ -63,6 +104,7 @@ export function BillsPage(): React.JSX.Element {
   const sort = params.get('sort') ?? DEFAULT_SORT;
 
   const tabConfig = findTab(activeTab);
+  const canBulkOnTab = tabActions[activeTab];
 
   const replaceParams = useCallback(
     (next: Record<string, string | undefined>) => {
@@ -252,20 +294,24 @@ export function BillsPage(): React.JSX.Element {
         pageSize={pageSize}
         storageKey={STORAGE_COLUMNS_KEY}
         showPaymentActions={activeTab === 'for-payment' || activeTab === 'history'}
-        selectionState={rowSelection}
-        onSelectionStateChange={setRowSelection}
+        selectionState={canBulkOnTab ? rowSelection : undefined}
+        onSelectionStateChange={canBulkOnTab ? setRowSelection : undefined}
         toolbarLeading={<ExportMenu searchString={exportSearch} />}
         toolbarSlot={
           /* Always mount BulkToolbar so its `result` state, the result
              modal, and the toast `Details` action survive the
              selection-clear that follows every bulk run. The component
-             hides its UI internally when `selectedIds` is empty. */
-          <BulkToolbar
-            selectedIds={selectedIds}
-            bills={bills}
-            activeTab={activeTab}
-            onClearSelection={clearSelection}
-          />
+             hides its UI internally when `selectedIds` is empty.
+             Roles with no bulk actions (Viewer) never get the column
+             above, so the toolbar simply never receives selected ids. */
+          canBulkOnTab ? (
+            <BulkToolbar
+              selectedIds={selectedIds}
+              bills={bills}
+              activeTab={activeTab}
+              onClearSelection={clearSelection}
+            />
+          ) : null
         }
       />
 
