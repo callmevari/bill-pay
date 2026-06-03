@@ -285,6 +285,11 @@ function BillHeader({ bill, vendorName }: { bill: Bill; vendorName: string }): R
           {bill.description ? (
             <p className="text-sm text-muted-foreground">{bill.description}</p>
           ) : null}
+          {bill.paymentMethod ? (
+            <p className="text-xs text-muted-foreground">
+              Payment method override: <span className="font-medium text-foreground">{bill.paymentMethod}</span>
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-col items-end gap-2">
           <BillStatusBadge status={bill.status} />

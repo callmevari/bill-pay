@@ -4,12 +4,16 @@ import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/r
 import { toast } from 'sonner';
 import { apiFetch, ApiError } from '@/lib/api';
 import { describeMutationError } from '@/lib/mutation-errors';
-import type { Bill } from '@/lib/api-types';
+import type { Bill, PaymentMethod } from '@/lib/api-types';
 
 export interface UpdateBillInput {
   description?: string | null;
   amount?: string;
   currency?: string;
+  // `null` clears the override (falls back to vendor default); omit the
+  // field to leave it untouched. Backend treats undefined and null
+  // differently — see docs/api-contract.md PATCH /bills/:id.
+  paymentMethod?: PaymentMethod | null;
   invoiceDate?: string;
   dueDate?: string;
 }

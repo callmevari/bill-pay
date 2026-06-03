@@ -4,7 +4,7 @@ import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/r
 import { toast } from 'sonner';
 import { apiFetch, ApiError } from '@/lib/api';
 import { describeMutationError } from '@/lib/mutation-errors';
-import type { Bill } from '@/lib/api-types';
+import type { Bill, PaymentMethod } from '@/lib/api-types';
 
 export interface CreateBillLineItemInput {
   description: string;
@@ -18,6 +18,9 @@ export interface CreateBillInput {
   description: string | null;
   amount: string;
   currency: string;
+  // Optional per-bill override. Omit to fall back to the vendor default at
+  // approve time; send an explicit `PaymentMethod` to pin the method.
+  paymentMethod?: PaymentMethod;
   invoiceDate: string;
   dueDate: string;
   lineItems?: CreateBillLineItemInput[];

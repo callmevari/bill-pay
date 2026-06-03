@@ -23,10 +23,24 @@ import { useUpdateBillMutation } from '@/hooks/use-update-bill-mutation';
 import { ApiError } from '@/lib/api';
 import { extractValidationMessages, isoToInputDate, toWireAmount, toWireDate } from '@/lib/wire';
 import { formatMoney } from '@/lib/format';
-import type { Bill } from '@/lib/api-types';
+import type { Bill, PaymentMethod } from '@/lib/api-types';
 
 const SUPPORTED_CURRENCIES = ['USD', 'EUR', 'GBP', 'ARS'] as const;
 type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
+
+const PAYMENT_METHODS: readonly PaymentMethod[] = [
+  'ACH',
+  'WIRE',
+  'CHECK',
+  'CARD',
+  'OFF_PLATFORM',
+] as const;
+
+// Sentinel value for "Use vendor default" — Radix's Select cannot use the
+// empty string as an item value, so we round-trip through this constant
+// at the boundary and translate it to `null` on the wire.
+const VENDOR_DEFAULT_METHOD = '__vendor_default__';
+type PaymentMethodSelectValue = PaymentMethod | typeof VENDOR_DEFAULT_METHOD;
 
 interface LineItemDraft {
   // `key` is a stable React identifier so adding/removing rows above this
@@ -45,6 +59,7 @@ interface FormState {
   description: string;
   amount: string;
   currency: SupportedCurrency;
+  paymentMethod: PaymentMethodSelectValue;
   invoiceDate: string;
   dueDate: string;
   lineItems: LineItemDraft[];
@@ -73,6 +88,7 @@ function initialState(bill: Bill | undefined): FormState {
       description: '',
       amount: '',
       currency: 'USD',
+      paymentMethod: VENDOR_DEFAULT_METHOD,
       invoiceDate: '',
       dueDate: '',
       lineItems: [],
@@ -85,6 +101,7 @@ function initialState(bill: Bill | undefined): FormState {
     currency: (SUPPORTED_CURRENCIES.includes(bill.currency as SupportedCurrency)
       ? bill.currency
       : 'USD') as SupportedCurrency,
+    paymentMethod: bill.paymentMethod ?? VENDOR_DEFAULT_METHOD,
     amount: bill.amount,
     invoiceDate: isoToInputDate(bill.invoiceDate),
     dueDate: isoToInputDate(bill.dueDate),
@@ -192,6 +209,12 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
           description: state.description.trim() === '' ? null : state.description.trim(),
           amount: toWireAmount(state.amount),
           currency: state.currency,
+          // Omit the field entirely on create when "Use vendor default" is
+          // picked — the backend treats undefined as "no override" and
+          // falls back to the vendor at approve time.
+          ...(state.paymentMethod === VENDOR_DEFAULT_METHOD
+            ? {}
+            : { paymentMethod: state.paymentMethod }),
           invoiceDate: toWireDate(state.invoiceDate),
           dueDate: toWireDate(state.dueDate),
           lineItems: state.lineItems
@@ -218,6 +241,11 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
           description: state.description.trim() === '' ? null : state.description.trim(),
           amount: toWireAmount(state.amount),
           currency: state.currency,
+          // PATCH semantics: `null` clears an existing override; a method
+          // value pins it. We always send one of the two so submitting
+          // "Use vendor default" clears a previously-set override.
+          paymentMethod:
+            state.paymentMethod === VENDOR_DEFAULT_METHOD ? null : state.paymentMethod,
           invoiceDate: toWireDate(state.invoiceDate),
           dueDate: toWireDate(state.dueDate),
         },
@@ -340,6 +368,31 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
               {SUPPORTED_CURRENCIES.map((code) => (
                 <SelectItem key={code} value={code}>
                   {code}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field
+          id="bill-payment-method"
+          label="Payment method"
+          hint="Overrides the vendor default at approve time."
+        >
+          <Select
+            value={state.paymentMethod}
+            onValueChange={(next) =>
+              updateField('paymentMethod', next as PaymentMethodSelectValue)
+            }
+          >
+            <SelectTrigger id="bill-payment-method">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={VENDOR_DEFAULT_METHOD}>Use vendor default</SelectItem>
+              {PAYMENT_METHODS.map((method) => (
+                <SelectItem key={method} value={method}>
+                  {method}
                 </SelectItem>
               ))}
             </SelectContent>
