@@ -218,10 +218,12 @@ export function BulkToolbar({
     const msg = `${summary.succeeded} of ${summary.total} succeeded · ${summary.failed} failed.`;
     const options = {
       duration: 8000,
-      // Widen this specific toast so the action button doesn't crowd
-      // the summary text; the default Sonner width (~356px) is fine
-      // for short messages but cramped for the bulk envelope.
-      className: 'bill-pay-bulk-toast',
+      // Widen this specific toast so the Details button doesn't get
+      // pushed off the right edge by the summary string. Sonner reads
+      // `--width` from the toast root and clamps the layout against
+      // its own viewport gutter — inline `style` takes precedence over
+      // any class-based rule the Toaster may emit.
+      style: { ['--width' as string]: '480px' } as React.CSSProperties,
       action: {
         label: 'Details',
         onClick: () => setResult(payload),

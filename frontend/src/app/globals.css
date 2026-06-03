@@ -125,11 +125,3 @@
   }
 }
 
-/* Wider Sonner toast for the bulk summary (the action button + the
-   summary string don't fit cleanly at the 356px default). Sonner sizes
-   each toast via the `--width` CSS variable on its root; setting that
-   keeps the toast inside the viewport gutter Sonner already reserves,
-   so it never overflows off the right edge. */
-[data-sonner-toast].bill-pay-bulk-toast {
-  --width: 480px;
-}
