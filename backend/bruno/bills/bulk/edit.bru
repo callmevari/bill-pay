@@ -34,4 +34,8 @@ docs {
   amount changes should reach for a CSV import flow (out of scope).
   `paymentMethod` is also excluded — it lives on the Payment row,
   not the Bill, once the bill is approved.
+
+  Response shape: `{ results: [{ id, ok, data? | error? }], summary }`.
+  Always HTTP 200; empty / duplicate `ids` -> 400 BULK_INVALID_IDS.
+  See `bills/bulk/approve.bru` for the full envelope.
 }

@@ -22,4 +22,8 @@ docs {
   (APPROVED -> PAID from UNSCHEDULED, SCHEDULED -> PAID otherwise).
   Items in PAID / FAILED / CANCELED fail per item with
   PAYMENT_INVALID_TRANSITION.
+
+  Response shape: `{ results: [{ id, ok, data? | error? }], summary }`.
+  Always HTTP 200; empty / duplicate `ids` -> 400 BULK_INVALID_IDS.
+  See `bills/bulk/approve.bru` for the full envelope.
 }

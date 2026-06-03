@@ -37,6 +37,10 @@ docs {
   vendors`. Stores the new bill id in `billId`. Try the request as
   approver or viewer to confirm 403.
 
+  `invoiceNumber` is validated against `^[\w\-._/# ()]+$` (letters,
+  digits, space, and `- _ . / # ( )`); the service trims and collapses
+  internal whitespace. Invalid characters return 400 VALIDATION_ERROR.
+
   Optional per-bill `paymentMethod` override (ACH | WIRE | CHECK | CARD |
   OFF_PLATFORM). Add it to the body to override the vendor default for
   this bill only — resolved at approve time as

@@ -18,8 +18,14 @@ body:json {
 
 docs {
   Admin or Approver. Approves every supplied bill independently (each
-  in its own transaction). Per-item result: `data` on success, `error`
-  on failure. Try mixing a PENDING_APPROVAL id with a DRAFT id — the
-  draft fails with BILL_INVALID_TRANSITION while the pending one is
-  approved. Viewer -> 403.
+  in its own transaction). Try mixing a PENDING_APPROVAL id with a
+  DRAFT id — the draft fails with BILL_INVALID_TRANSITION while the
+  pending one is approved. Viewer -> 403.
+
+  Response shape (every bulk endpoint):
+      { results: [{ id, ok: true, data: <entity> } |
+                  { id, ok: false, error: { code, message } }],
+        summary: { total, succeeded, failed } }
+  HTTP status is always 200 — partial failure is the common case.
+  Empty or duplicate `ids` -> 400 BULK_INVALID_IDS.
 }
