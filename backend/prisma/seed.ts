@@ -754,7 +754,7 @@ async function seedUsers(): Promise<void> {
 
 interface SeededVendor {
   id: string;
-  defaultPaymentMethod: PaymentMethod | null;
+  defaultPaymentMethod: PaymentMethod;
 }
 
 async function seedVendors(): Promise<SeededVendor[]> {
@@ -892,20 +892,19 @@ async function seedBill(spec: BillSpec, vendors: SeededVendor[]): Promise<void> 
 
   // Mirror BillsService.approve's resolution precedence so seeded bills
   // and runtime-approved bills behave identically: bill override beats
-  // vendor default beats ACH fallback. `methodSource` is captured on
-  // the `payment.created` activity row for the UI to surface why a
-  // particular method was chosen on this bill.
+  // vendor default. The chain terminates at the vendor because
+  // `Vendor.defaultPaymentMethod` is non-null at the schema level.
+  // `methodSource` is captured on the `payment.created` activity row
+  // for the UI to surface why a particular method was chosen on this
+  // bill.
   let paymentMethod: PaymentMethod;
-  let methodSource: 'bill' | 'vendor' | 'fallback';
+  let methodSource: 'bill' | 'vendor';
   if (spec.paymentMethod) {
     paymentMethod = spec.paymentMethod;
     methodSource = 'bill';
-  } else if (vendor.defaultPaymentMethod) {
+  } else {
     paymentMethod = vendor.defaultPaymentMethod;
     methodSource = 'vendor';
-  } else {
-    paymentMethod = PaymentMethod.ACH;
-    methodSource = 'fallback';
   }
   const paymentCreatedAt = plusMinutes(approvedAt, 1);
   const payment = await prisma.payment.create({

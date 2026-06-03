@@ -86,8 +86,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 // Surfaces the `payment.created` metadata the backend emits — when the
 // resolved method came from the bill override (rather than the vendor
-// default or the ACH fallback) we show a small badge so reviewers can
-// understand why this particular payment used a non-default method. See
+// default) we show a small badge so reviewers can understand why this
+// particular payment used a non-default method. See
 // `docs/api-contract.md → POST /bills/:id/approve`.
 function readBillOverride(entry: ActivityLogEntry): string | null {
   if (entry.action !== 'payment.created') return null;

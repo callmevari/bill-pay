@@ -67,12 +67,12 @@ List vendors, paginated.
 
 ### `POST /vendors` — Admin only
 
-**Body** (`name` required; all else optional):
+**Body** (`name` and `defaultPaymentMethod` required; all else optional):
 ```json
 {
   "name": "Acme Corp",
-  "email": "ap@acme.com",
   "defaultPaymentMethod": "ACH",
+  "email": "ap@acme.com",
   "streetAddress": "1 Market St",
   "city": "San Francisco",
   "state": "CA",
@@ -81,7 +81,7 @@ List vendors, paginated.
   "notes": "Net 30"
 }
 ```
-`defaultPaymentMethod` ∈ `ACH | WIRE | CHECK | CARD | OFF_PLATFORM`.
+`defaultPaymentMethod` ∈ `ACH | WIRE | CHECK | CARD | OFF_PLATFORM`. Required — the approve flow falls back to it when a bill carries no per-bill override, so leaving it blank would silently route to ACH; we surface that decision to the user at vendor-create time instead.
 
 **201** → bare `VendorResponse`. **400 VALIDATION_ERROR** on invalid body. **403 INSUFFICIENT_PERMISSIONS** for non-Admin.
 
@@ -229,7 +229,7 @@ Four action endpoints drive the bill through its state machine. Each is a `POST`
 
 #### `POST /bills/:id/approve` — Admin or Approver
 
-`PENDING_APPROVAL → APPROVED`. Updates the existing `Approval` row to `APPROVED` and sets `approverId` to the acting user (the actual approver, which may be an Admin). Creates the linked `Payment` row in `UNSCHEDULED` with `amount` / `currency` copied from the bill and `method` resolved as **`bill.paymentMethod ?? vendor.defaultPaymentMethod ?? 'ACH'`** — per-bill override beats vendor default beats `ACH` fallback. **200** → updated `BillResponse`. **409 BILL_INVALID_TRANSITION** if the bill is not in `PENDING_APPROVAL`. A `payment.created` `ActivityLog` row is written alongside the `bill.approved` entry; its `metadata` carries `{ "method": <resolved>, "methodSource": "bill" | "vendor" | "fallback", "billId": <bill.id> }` so the UI can explain why a particular method was chosen.
+`PENDING_APPROVAL → APPROVED`. Updates the existing `Approval` row to `APPROVED` and sets `approverId` to the acting user (the actual approver, which may be an Admin). Creates the linked `Payment` row in `UNSCHEDULED` with `amount` / `currency` copied from the bill and `method` resolved as **`bill.paymentMethod ?? vendor.defaultPaymentMethod`** — per-bill override beats vendor default. The chain terminates at the vendor because `Vendor.defaultPaymentMethod` is non-null at the schema level. **200** → updated `BillResponse`. **409 BILL_INVALID_TRANSITION** if the bill is not in `PENDING_APPROVAL`. A `payment.created` `ActivityLog` row is written alongside the `bill.approved` entry; its `metadata` carries `{ "method": <resolved>, "methodSource": "bill" | "vendor", "billId": <bill.id> }` so the UI can explain why a particular method was chosen.
 
 #### `POST /bills/:id/reject` — Admin or Approver
 

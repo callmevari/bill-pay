@@ -45,8 +45,8 @@ export class UpdateBillDto {
   dueDate?: string;
 
   // Per-bill payment-method override. Nullable on update (send `null` to
-  // clear and fall back to the vendor default at approve time); accepts
-  // the same `PaymentMethod` enum as the vendor's `defaultPaymentMethod`.
+  // clear and fall back to the vendor's non-null `defaultPaymentMethod`
+  // at approve time); accepts the same `PaymentMethod` enum.
   @ApiPropertyOptional({ enum: PaymentMethod, nullable: true })
   @IsOptional()
   @IsEnum(PaymentMethod)

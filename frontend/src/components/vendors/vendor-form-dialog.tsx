@@ -32,7 +32,6 @@ interface VendorFormDialogProps {
 }
 
 const PAYMENT_METHODS: PaymentMethod[] = ['ACH', 'WIRE', 'CHECK', 'CARD', 'OFF_PLATFORM'];
-const NONE_VALUE = '__none__';
 
 export function VendorFormDialog({
   open,
@@ -44,8 +43,8 @@ export function VendorFormDialog({
   const updateMutation = useUpdateVendorMutation();
 
   const [name, setName] = useState(vendor?.name ?? '');
-  const [defaultPaymentMethod, setDefaultPaymentMethod] = useState<string>(
-    vendor?.defaultPaymentMethod ?? NONE_VALUE,
+  const [defaultPaymentMethod, setDefaultPaymentMethod] = useState<PaymentMethod | ''>(
+    vendor?.defaultPaymentMethod ?? '',
   );
   const [submitted, setSubmitted] = useState(false);
   const [serverError, setServerError] = useState<ApiError | null>(null);
@@ -54,7 +53,7 @@ export function VendorFormDialog({
   useEffect(() => {
     if (open) {
       setName(vendor?.name ?? '');
-      setDefaultPaymentMethod(vendor?.defaultPaymentMethod ?? NONE_VALUE);
+      setDefaultPaymentMethod(vendor?.defaultPaymentMethod ?? '');
       setSubmitted(false);
       setServerError(null);
     }
@@ -62,15 +61,18 @@ export function VendorFormDialog({
 
   const trimmedName = name.trim();
   const nameError = submitted && trimmedName.length === 0 ? 'Name is required.' : undefined;
+  const methodError =
+    submitted && defaultPaymentMethod === ''
+      ? 'Select a default payment method.'
+      : undefined;
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   const submit = async (): Promise<void> => {
     setSubmitted(true);
     setServerError(null);
-    if (trimmedName.length === 0) return;
+    if (trimmedName.length === 0 || defaultPaymentMethod === '') return;
 
-    const method =
-      defaultPaymentMethod === NONE_VALUE ? null : (defaultPaymentMethod as PaymentMethod);
+    const method = defaultPaymentMethod;
 
     try {
       if (isEdit && vendor) {
@@ -148,16 +150,18 @@ export function VendorFormDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="vendor-method">Default payment method</Label>
+            <Label htmlFor="vendor-method">
+              Default payment method
+              <span className="ml-0.5 text-destructive">*</span>
+            </Label>
             <Select
               value={defaultPaymentMethod}
-              onValueChange={(next) => setDefaultPaymentMethod(next)}
+              onValueChange={(next) => setDefaultPaymentMethod(next as PaymentMethod)}
             >
               <SelectTrigger id="vendor-method">
-                <SelectValue placeholder="None" />
+                <SelectValue placeholder="Pick a method" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NONE_VALUE}>None</SelectItem>
                 {PAYMENT_METHODS.map((method) => (
                   <SelectItem key={method} value={method}>
                     {method}
@@ -165,9 +169,15 @@ export function VendorFormDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              Used when auto-creating a payment on bill approval.
-            </p>
+            {methodError ? (
+              <p className="text-xs text-destructive" role="alert">
+                {methodError}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Used when auto-creating a payment on bill approval.
+              </p>
+            )}
           </div>
 
           <DialogFooter>

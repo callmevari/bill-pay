@@ -81,18 +81,18 @@ model User {
 }
 
 model Vendor {
-  id                   String         @id @default(cuid(2))
+  id                   String        @id @default(cuid(2))
   name                 String
   email                String?
-  defaultPaymentMethod PaymentMethod?
+  defaultPaymentMethod PaymentMethod
   streetAddress        String?
   city                 String?
   state                String?
   postalCode           String?
   country              String?
   notes                String?
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
   bills Bill[]
 
@@ -101,7 +101,9 @@ model Vendor {
 
 /// Invoice owed to a vendor. Owns line items and spawns one Payment when approved.
 /// `paymentMethod` is the per-bill override of the vendor's default; resolved at
-/// approve time as bill > vendor.defaultPaymentMethod > ACH. See docs/backend.md.
+/// approve time as bill > vendor.defaultPaymentMethod. The chain terminates at
+/// the vendor because `defaultPaymentMethod` is non-null at the schema level.
+/// See docs/backend.md.
 model Bill {
   id            String         @id @default(cuid(2))
   invoiceNumber String

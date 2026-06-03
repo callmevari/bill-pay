@@ -137,10 +137,11 @@ describe('Bills lifecycle (e2e)', () => {
 
   // ---- payment-method precedence on approve ----------------------
   // Approve resolves the Payment.method as bill.paymentMethod (override)
-  // > vendor.defaultPaymentMethod > ACH fallback, and records which
-  // source won under `metadata.methodSource` on the `payment.created`
-  // activity row. End-to-end coverage of the wire (not just the unit
-  // assertion on `tx.payment.create`).
+  // > vendor.defaultPaymentMethod, and records which source won under
+  // `metadata.methodSource` on the `payment.created` activity row. The
+  // chain terminates at the vendor because `defaultPaymentMethod` is
+  // non-null at the schema level. End-to-end coverage of the wire (not
+  // just the unit assertion on `tx.payment.create`).
 
   it('approve uses bill.paymentMethod as the Payment.method override (methodSource: "bill")', async () => {
     // Vendor defaults to ACH, but the bill carries a WIRE override.
@@ -229,59 +230,6 @@ describe('Bills lifecycle (e2e)', () => {
       expect.objectContaining({
         method: PaymentMethod.CHECK,
         methodSource: 'vendor',
-      }),
-    );
-  });
-
-  it('approve falls back to ACH when both bill and vendor are null (methodSource: "fallback")', async () => {
-    // Vendor defaults are nullable, the helper does not set one.
-    const vendorWithoutDefault = await prisma.vendor.create({
-      data: { name: 'Bare Vendor', email: 'bare@e2e.test' },
-    });
-    const bill = await prisma.bill.create({
-      data: {
-        invoiceNumber: 'INV-PM-FALLBACK',
-        vendorId: vendorWithoutDefault.id,
-        createdById: actors.admin.id,
-        status: BillStatus.DRAFT,
-        amount: new Prisma.Decimal('100.00'),
-        currency: 'USD',
-        paymentMethod: null,
-        invoiceDate: new Date('2026-05-01T00:00:00.000Z'),
-        dueDate: new Date('2026-05-31T00:00:00.000Z'),
-      },
-    });
-    await request(app.getHttpServer())
-      .post(`/api/v1/bills/${bill.id}/submit-for-approval`)
-      .set('x-user-id', actors.admin.id);
-
-    const approveRes = await request(app.getHttpServer())
-      .post(`/api/v1/bills/${bill.id}/approve`)
-      .set('x-user-id', actors.approver.id);
-    expect(approveRes.status).toBe(200);
-    const approveBody = approveRes.body as {
-      paymentMethod: PaymentMethod | null;
-      payment: { method: PaymentMethod };
-    };
-    expect(approveBody.paymentMethod).toBeNull();
-    expect(approveBody.payment.method).toBe(PaymentMethod.ACH);
-
-    const payment = await prisma.payment.findUniqueOrThrow({
-      where: { billId: bill.id },
-    });
-    expect(payment.method).toBe(PaymentMethod.ACH);
-
-    const paymentCreated = await prisma.activityLog.findFirstOrThrow({
-      where: {
-        entityType: 'PAYMENT',
-        entityId: payment.id,
-        action: 'payment.created',
-      },
-    });
-    expect(paymentCreated.metadata).toEqual(
-      expect.objectContaining({
-        method: PaymentMethod.ACH,
-        methodSource: 'fallback',
       }),
     );
   });

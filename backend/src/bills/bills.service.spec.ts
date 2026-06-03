@@ -297,9 +297,11 @@ describe('BillsService', () => {
     });
 
     // Payment-method resolution precedence: bill override > vendor
-    // default > ACH fallback. The assertion is on the `method` value
-    // passed to `tx.payment.create` and the `methodSource` recorded on
-    // the `payment.created` activity log row — both decisions live
+    // default. The chain terminates at the vendor because
+    // `Vendor.defaultPaymentMethod` is non-null at the schema level.
+    // The assertion is on the `method` value passed to
+    // `tx.payment.create` and the `methodSource` recorded on the
+    // `payment.created` activity log row — both decisions live
     // entirely in the service, so they belong here rather than e2e.
     describe('payment-method resolution', () => {
       type PaymentCreateArgs = { data: { method: PaymentMethod } };
@@ -330,7 +332,7 @@ describe('BillsService', () => {
 
       const stubApproveTransaction = (params: {
         billPaymentMethod: PaymentMethod | null;
-        vendorDefault: PaymentMethod | null;
+        vendorDefault: PaymentMethod;
       }): void => {
         // Outer `loadOrThrow` read for the pre-CAS validation.
         prisma.bill.findUnique
@@ -431,23 +433,6 @@ describe('BillsService', () => {
           expect.objectContaining({
             method: PaymentMethod.CHECK,
             methodSource: 'vendor',
-          }),
-        );
-      });
-
-      it('falls back to ACH when both bill and vendor are null, recording methodSource "fallback"', async () => {
-        stubApproveTransaction({
-          billPaymentMethod: null,
-          vendorDefault: null,
-        });
-
-        await service.approve('b1', actor);
-
-        expect(capturedPaymentMethod()).toBe(PaymentMethod.ACH);
-        expect(capturedPaymentCreatedMetadata()).toEqual(
-          expect.objectContaining({
-            method: PaymentMethod.ACH,
-            methodSource: 'fallback',
           }),
         );
       });

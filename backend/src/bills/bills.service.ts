@@ -485,21 +485,20 @@ export class BillsService {
           message: 'Vendor not found.',
         });
       }
-      // Payment-method precedence: per-bill override > vendor default >
-      // ACH fallback. Source is recorded on the `payment.created`
-      // activity row so the UI can explain why a particular method was
-      // chosen ("Stripe invoice paid by WIRE for this bill only").
+      // Payment-method precedence: per-bill override > vendor default.
+      // The chain terminates at the vendor because
+      // `Vendor.defaultPaymentMethod` is non-null at the schema level.
+      // Source is recorded on the `payment.created` activity row so the
+      // UI can explain why a particular method was chosen ("Stripe
+      // invoice paid by WIRE for this bill only").
       let paymentMethod: PaymentMethod;
-      let methodSource: 'bill' | 'vendor' | 'fallback';
+      let methodSource: 'bill' | 'vendor';
       if (updatedBill.paymentMethod !== null) {
         paymentMethod = updatedBill.paymentMethod;
         methodSource = 'bill';
-      } else if (vendor.defaultPaymentMethod !== null) {
+      } else {
         paymentMethod = vendor.defaultPaymentMethod;
         methodSource = 'vendor';
-      } else {
-        paymentMethod = PaymentMethod.ACH;
-        methodSource = 'fallback';
       }
 
       // MVP invariant: exactly one Approval row per bill (created at

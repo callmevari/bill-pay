@@ -66,7 +66,7 @@ export class CreateBillDto {
   @ApiPropertyOptional({
     enum: PaymentMethod,
     description:
-      'Optional per-bill override. Resolved at approve time as bill > vendor.defaultPaymentMethod > ACH.',
+      'Optional per-bill override. Resolved at approve time as bill > vendor.defaultPaymentMethod.',
   })
   @IsOptional()
   @IsEnum(PaymentMethod)

@@ -1,4 +1,10 @@
-import { PrismaClient, Role, User, Vendor } from '@prisma/client';
+import {
+  PaymentMethod,
+  PrismaClient,
+  Role,
+  User,
+  Vendor,
+} from '@prisma/client';
 
 export interface SeedActors {
   admin: User;
@@ -40,7 +46,11 @@ export async function seedMinimalData(
     data: { name: 'Test Viewer', email: 'viewer@e2e.test', role: Role.VIEWER },
   });
   const vendor = await prisma.vendor.create({
-    data: { name: 'E2E Test Vendor', email: 'vendor@e2e.test' },
+    data: {
+      name: 'E2E Test Vendor',
+      email: 'vendor@e2e.test',
+      defaultPaymentMethod: PaymentMethod.ACH,
+    },
   });
   return { admin, approver, viewer, vendor };
 }

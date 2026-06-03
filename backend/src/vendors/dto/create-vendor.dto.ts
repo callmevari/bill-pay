@@ -21,10 +21,9 @@ export class CreateVendorDto {
   @IsEmail()
   email?: string;
 
-  @ApiPropertyOptional({ enum: PaymentMethod })
-  @IsOptional()
+  @ApiProperty({ enum: PaymentMethod })
   @IsEnum(PaymentMethod)
-  defaultPaymentMethod?: PaymentMethod;
+  defaultPaymentMethod: PaymentMethod;
 
   @ApiPropertyOptional({ example: '510 Townsend Street' })
   @IsOptional()
