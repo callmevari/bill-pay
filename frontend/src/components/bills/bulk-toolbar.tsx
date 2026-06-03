@@ -218,6 +218,10 @@ export function BulkToolbar({
     const msg = `${summary.succeeded} of ${summary.total} succeeded · ${summary.failed} failed.`;
     const options = {
       duration: 8000,
+      // Widen this specific toast so the action button doesn't crowd
+      // the summary text; the default Sonner width (~356px) is fine
+      // for short messages but cramped for the bulk envelope.
+      className: 'bill-pay-bulk-toast',
       action: {
         label: 'Details',
         onClick: () => setResult(payload),
@@ -227,6 +231,11 @@ export function BulkToolbar({
     else if (summary.succeeded === 0) toast.error(`${title}: ${msg}`, options);
     else toast.warning(`${title}: ${msg}`, options);
   };
+  // The summary toast is the sole entry point to the result modal. We
+  // intentionally do NOT call `setResult` here — auto-opening the modal
+  // on every bulk run pulled the user's focus before they could
+  // even read the toast. Clicking "Details" on the toast is the only
+  // path that opens the dialog.
   const presentBills = (
     title: string,
     response: BulkResponse<Bill> | undefined,
@@ -237,7 +246,6 @@ export function BulkToolbar({
       response: response as BulkResponse<BulkResultEntity>,
       resolveLabel: resolveBillLabel,
     };
-    setResult(payload);
     toastSummary(title, payload);
     onClearSelection();
   };
@@ -251,7 +259,6 @@ export function BulkToolbar({
       response: response as BulkResponse<BulkResultEntity>,
       resolveLabel: resolvePaymentLabel,
     };
-    setResult(payload);
     toastSummary(title, payload);
     onClearSelection();
   };

@@ -124,3 +124,16 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+
+/* Wider Sonner toast for the bulk summary (the action button + the
+   summary string don't fit cleanly at the 356px default). */
+.bill-pay-bulk-toast {
+  min-width: 480px;
+  width: 480px;
+}
+@media (max-width: 520px) {
+  .bill-pay-bulk-toast {
+    min-width: auto;
+    width: 100%;
+  }
+}
