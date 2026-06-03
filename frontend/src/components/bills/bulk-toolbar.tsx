@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 import {
   Archive,
   Ban,
@@ -110,7 +111,6 @@ export function BulkToolbar({
   const [editDueDate, setEditDueDate] = useState('');
   const [editInvoiceDate, setEditInvoiceDate] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  const [editEnableDescription, setEditEnableDescription] = useState(false);
 
   if (selectedIds.length === 0) return null;
   if (activeTab === 'history') return null;
@@ -196,6 +196,22 @@ export function BulkToolbar({
   // happens inside the hook's `onSettled`, and the selection is cleared
   // so a second action does not fire against rows the user no longer
   // expects to be selected.
+  // Surface a sticky toast alongside the modal so partial-failure
+  // outcomes (the common case for bulk runs against mixed selections)
+  // are visible even if the user dismisses or misses the dialog. The
+  // modal still carries the per-item detail; the toast just shouts the
+  // summary so the action does not feel ghost-fired.
+  const toastSummary = (title: string, summary: {
+    total: number;
+    succeeded: number;
+    failed: number;
+  }): void => {
+    if (summary.total === 0) return;
+    const msg = `${summary.succeeded} of ${summary.total} succeeded · ${summary.failed} failed.`;
+    if (summary.failed === 0) toast.success(`${title}: ${msg}`);
+    else if (summary.succeeded === 0) toast.error(`${title}: ${msg}`);
+    else toast.warning(`${title}: ${msg}`);
+  };
   const presentBills = (
     title: string,
     response: BulkResponse<Bill> | undefined,
@@ -206,6 +222,7 @@ export function BulkToolbar({
       response: response as BulkResponse<BulkResultEntity>,
       resolveLabel: resolveBillLabel,
     });
+    toastSummary(title, response.summary);
     onClearSelection();
   };
   const presentPayments = (
@@ -218,6 +235,7 @@ export function BulkToolbar({
       response: response as BulkResponse<BulkResultEntity>,
       resolveLabel: resolvePaymentLabel,
     });
+    toastSummary(title, response.summary);
     onClearSelection();
   };
 
@@ -558,7 +576,6 @@ export function BulkToolbar({
             setEditDueDate('');
             setEditInvoiceDate('');
             setEditDescription('');
-            setEditEnableDescription(false);
           }
         }}
         title={`Edit ${selectedIds.length} bill${selectedIds.length === 1 ? '' : 's'}`}
@@ -573,9 +590,7 @@ export function BulkToolbar({
           } = {};
           if (editDueDate) fields.dueDate = `${editDueDate}T00:00:00.000Z`;
           if (editInvoiceDate) fields.invoiceDate = `${editInvoiceDate}T00:00:00.000Z`;
-          if (editEnableDescription) {
-            fields.description = editDescription.trim() === '' ? null : editDescription.trim();
-          }
+          if (editDescription.trim() !== '') fields.description = editDescription.trim();
           if (Object.keys(fields).length === 0) {
             // Nothing to send — close silently rather than 400.
             setDialog(null);
@@ -586,7 +601,6 @@ export function BulkToolbar({
           setEditDueDate('');
           setEditInvoiceDate('');
           setEditDescription('');
-          setEditEnableDescription(false);
           presentBills('Edit bills', response);
         }}
       >
@@ -613,25 +627,16 @@ export function BulkToolbar({
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <Label htmlFor="bulk-edit-description">Description</Label>
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={editEnableDescription}
-                  onChange={(event) => setEditEnableDescription(event.target.checked)}
-                  className="size-3.5"
-                />
-                Apply to selection
-              </label>
-            </div>
+            <Label htmlFor="bulk-edit-description">Description</Label>
             <Textarea
               id="bulk-edit-description"
               value={editDescription}
               onChange={(event) => setEditDescription(event.target.value)}
-              placeholder="Leave blank to clear the description on each selected bill."
-              disabled={!editEnableDescription}
+              placeholder="Leave blank to keep the existing memo on each selected bill."
             />
+            <p className="text-xs text-muted-foreground">
+              Empty leaves the existing description untouched.
+            </p>
           </div>
         </div>
       </ConfirmDialog>
