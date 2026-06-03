@@ -27,6 +27,7 @@ Off by default — the default `docker compose up` keeps the stack minimal. Stud
 ```bash
 corepack enable && corepack prepare pnpm@latest --activate
 pnpm install
+cp backend/.env.example backend/.env               # only needed for local dev
 docker compose up -d postgres                      # Postgres only
 
 pnpm --filter backend exec prisma migrate deploy
