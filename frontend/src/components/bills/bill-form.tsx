@@ -706,22 +706,31 @@ export function BillForm({ mode, bill }: BillFormProps): React.JSX.Element {
         <Button type="button" variant="outline" size="sm" onClick={() => router.back()} disabled={isPending}>
           Cancel
         </Button>
-        {mode === 'edit' && !isDirty ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span tabIndex={0}>
-                <Button type="submit" size="sm" disabled>
-                  Save changes
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>No changes to save.</TooltipContent>
-          </Tooltip>
-        ) : (
-          <Button type="submit" size="sm" disabled={isPending}>
-            {mode === 'create' ? 'Create bill' : 'Save changes'}
-          </Button>
-        )}
+        {(() => {
+          const label = mode === 'create' ? 'Create bill' : 'Save changes';
+          const disabledForErrors = hasErrors;
+          const disabledForClean = mode === 'edit' && !isDirty;
+          const disabled = isPending || disabledForErrors || disabledForClean;
+          const tooltip = disabledForErrors
+            ? 'Fix the errors above before saving.'
+            : disabledForClean
+              ? 'No changes to save.'
+              : null;
+          const button = (
+            <Button type="submit" size="sm" disabled={disabled}>
+              {label}
+            </Button>
+          );
+          if (!tooltip || !disabled) return button;
+          return (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0}>{button}</span>
+              </TooltipTrigger>
+              <TooltipContent>{tooltip}</TooltipContent>
+            </Tooltip>
+          );
+        })()}
       </div>
     </form>
   );
