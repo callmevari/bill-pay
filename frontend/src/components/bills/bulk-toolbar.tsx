@@ -112,8 +112,11 @@ export function BulkToolbar({
   const [editInvoiceDate, setEditInvoiceDate] = useState('');
   const [editDescription, setEditDescription] = useState('');
 
-  if (selectedIds.length === 0) return null;
-  if (activeTab === 'history') return null;
+  // Keep this component mounted across the bulk-run -> selection-clear
+  // cycle so the toast's "Details" action still has a live setter to
+  // re-open the modal. The toolbar UI is hidden via `showToolbar`
+  // below instead.
+  const showToolbar = selectedIds.length > 0 && activeTab !== 'history';
 
   const selectedSet = new Set(selectedIds);
   const selectedBills = bills.filter((bill) => selectedSet.has(bill.id));
@@ -271,6 +274,7 @@ export function BulkToolbar({
 
   return (
     <>
+      {showToolbar ? (
       <div
         className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2"
         role="region"
@@ -517,6 +521,7 @@ export function BulkToolbar({
           </Affordance>
         </div>
       </div>
+      ) : null}
 
       <ConfirmDialog
         open={dialog === 'reject'}
