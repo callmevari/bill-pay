@@ -10,6 +10,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  MaxLength,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
@@ -88,11 +89,14 @@ export class BulkEditBillsDto extends BulkBillIdsDto {
 // Per-item notes are out of scope: the UI would have to collect a
 // distinct reason per row, which negates the point of a bulk action.
 export class BulkRejectBillsDto extends BulkBillIdsDto {
+  // Mirror the single-item `RejectBillDto.notes` shape so the bulk and
+  // single-item contracts cannot diverge — same validators, same cap.
   @ApiPropertyOptional({
     description: 'Optional notes applied uniformly to every rejected bill.',
   })
   @ValidateIf((_, value) => value !== undefined)
   @IsString()
+  @MaxLength(2000)
   notes?: string;
 }
 

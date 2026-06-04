@@ -20,6 +20,12 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    # Pin the image name so the `studio` profile (which references
+    # `bill-pay-backend:latest` to reuse this build) resolves regardless
+    # of the compose project name. Without an explicit `image:`, Docker
+    # would name the build after the directory and Studio would try to
+    # pull from a registry on a cold clone.
+    image: bill-pay-backend:latest
     container_name: billpay-api
     depends_on:
       postgres:

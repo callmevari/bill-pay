@@ -12,7 +12,7 @@ Two supported paths. Both start with cloning the repo.
 docker compose up --build
 ```
 
-Brings up Postgres, the backend, and the frontend. On first boot the backend container runs `prisma migrate deploy` then `prisma db seed`; both are idempotent (seed skips itself when the DB already holds data — set `BILLPAY_SEED_FORCE=1` on the backend service to wipe and reseed). Open <http://localhost:3000>.
+Brings up Postgres, the backend, and the frontend. On first boot the backend container runs `prisma migrate deploy` then `prisma db seed`; both are idempotent (seed skips itself when the `User` table already holds at least one row — set `BILLPAY_SEED_FORCE=1` on the backend service to wipe and reseed). Open <http://localhost:3000>.
 
 **Optional: Prisma Studio.** Run with the `studio` profile to also bring up a read/write DB browser at <http://localhost:5555>:
 
