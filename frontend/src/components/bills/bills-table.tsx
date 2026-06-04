@@ -299,25 +299,33 @@ export function BillsTable({
     },
   });
 
-  if (error) {
-    if (error.code === ErrorCode.INSUFFICIENT_PERMISSIONS) {
-      return <Forbidden />;
+  // Always render the outer container + `toolbarSlot` so the host
+  // component (BulkToolbar) stays mounted across empty / loading /
+  // error states. Without this, a bulk action that empties the current
+  // tab (e.g. select-all + bulk submit on Drafts) would unmount the
+  // toolbar before the toast's "Details" action could call its
+  // `setResult` setter — the click would land on a dead component and
+  // the result modal would never open.
+  const body = ((): React.ReactNode => {
+    if (error) {
+      if (error.code === ErrorCode.INSUFFICIENT_PERMISSIONS) {
+        return <Forbidden />;
+      }
+      return <ErrorState error={error} title="Could not load bills" onRetry={onRetry} />;
     }
-    return <ErrorState error={error} title="Could not load bills" onRetry={onRetry} />;
-  }
-
-  if (isPending) {
-    return <Loading rows={pageSize} />;
-  }
-
-  if (bills.length === 0) {
-    return (
-      <Empty
-        title="No bills match these filters"
-        description="Try clearing a filter or switching tabs to see what's there."
-      />
-    );
-  }
+    if (isPending) {
+      return <Loading rows={pageSize} />;
+    }
+    if (bills.length === 0) {
+      return (
+        <Empty
+          title="No bills match these filters"
+          description="Try clearing a filter or switching tabs to see what's there."
+        />
+      );
+    }
+    return null;
+  })();
 
   return (
     <div className={cn('flex flex-col gap-3', isFetching && 'opacity-70 transition-opacity')}>
@@ -326,6 +334,7 @@ export function BillsTable({
         <ColumnVisibility table={table} />
       </div>
       {toolbarSlot}
+      {body ?? (
       <div className="rounded-lg border border-border bg-card">
         <Table>
           <TableHeader>
@@ -381,6 +390,7 @@ export function BillsTable({
           </TableBody>
         </Table>
       </div>
+      )}
     </div>
   );
 }

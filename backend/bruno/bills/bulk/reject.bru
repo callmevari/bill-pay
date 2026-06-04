@@ -1,0 +1,30 @@
+meta {
+  name: Bulk reject
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/bills/bulk/reject
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "ids": ["{{billId}}"],
+    "notes": "Wrong period."
+  }
+}
+
+docs {
+  Admin or Approver. Rejects every supplied PENDING_APPROVAL bill; the
+  optional `notes` string is applied uniformly to every Approval row.
+  Per-item notes are out of scope — a bulk action with N distinct
+  reasons defeats the point. Items not in PENDING_APPROVAL fail per
+  item with BILL_INVALID_TRANSITION. Viewer -> 403.
+
+  Response shape: `{ results: [{ id, ok, data? | error? }], summary }`.
+  Always HTTP 200; empty / duplicate `ids` -> 400 BULK_INVALID_IDS.
+  See `bills/bulk/approve.bru` for the full envelope.
+}

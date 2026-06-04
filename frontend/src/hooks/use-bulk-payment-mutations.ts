@@ -6,13 +6,14 @@ import {
   type UseMutationResult,
 } from '@tanstack/react-query';
 import { apiFetch, ApiError } from '@/lib/api';
-import { runClientBulk, type BulkResponse } from '@/lib/bulk';
+import type { BulkResponse } from '@/lib/bulk';
 import { toWireDate } from '@/lib/wire';
 import type { BillPayment } from '@/lib/api-types';
 
-// Bulk hooks for payments. Each call returns the documented envelope and
-// invalidates bill + payment caches by namespace; the result modal owns
-// the user-facing summary, so we do not toast here.
+// Bulk hooks for payments. Every hook calls a native bulk endpoint and
+// returns the documented envelope. Cache invalidation runs in
+// `onSettled` so a partial failure still refreshes the lists. The
+// result modal owns the user-facing summary, so we do not toast here.
 
 function invalidatePaymentCaches(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -76,8 +77,6 @@ export function useBulkCancelPaymentsMutation(): UseMutationResult<
   });
 }
 
-// `schedule` and `retry` are NOT exposed as bulk endpoints — fan out
-// client-side with the same envelope so the result modal stays uniform.
 export interface BulkSchedulePaymentsVariables {
   ids: string[];
   // `YYYY-MM-DD` from the picker; normalised to ISO inside the hook.
@@ -91,15 +90,11 @@ export function useBulkSchedulePaymentsMutation(): UseMutationResult<
 > {
   const queryClient = useQueryClient();
   return useMutation<BulkResponse<BillPayment>, ApiError, BulkSchedulePaymentsVariables>({
-    mutationFn: ({ ids, scheduledFor }) => {
-      const body = { scheduledFor: toWireDate(scheduledFor) };
-      return runClientBulk<BillPayment>(ids, (id) =>
-        apiFetch<BillPayment>(`/payments/${id}/schedule`, {
-          method: 'POST',
-          body,
-        }),
-      );
-    },
+    mutationFn: ({ ids, scheduledFor }) =>
+      apiFetch<BulkResponse<BillPayment>>('/payments/bulk/schedule', {
+        method: 'POST',
+        body: { ids, scheduledFor: toWireDate(scheduledFor) },
+      }),
     onSettled: () => invalidatePaymentCaches(queryClient),
   });
 }
@@ -112,9 +107,10 @@ export function useBulkRetryPaymentsMutation(): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation<BulkResponse<BillPayment>, ApiError, BulkPaymentIdsVariables>({
     mutationFn: ({ ids }) =>
-      runClientBulk<BillPayment>(ids, (id) =>
-        apiFetch<BillPayment>(`/payments/${id}/retry`, { method: 'POST' }),
-      ),
+      apiFetch<BulkResponse<BillPayment>>('/payments/bulk/retry', {
+        method: 'POST',
+        body: { ids },
+      }),
     onSettled: () => invalidatePaymentCaches(queryClient),
   });
 }

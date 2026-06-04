@@ -1,0 +1,27 @@
+meta {
+  name: Bulk retry
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/payments/bulk/retry
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "ids": ["{{paymentId}}"]
+  }
+}
+
+docs {
+  Admin only. Re-attempts every supplied FAILED payment, clearing
+  `failedAt` / `failureReason` and flipping them back to SCHEDULED.
+  Items not in FAILED fail per item with PAYMENT_INVALID_TRANSITION.
+
+  Response shape: `{ results: [{ id, ok, data? | error? }], summary }`.
+  Always HTTP 200; empty / duplicate `ids` -> 400 BULK_INVALID_IDS.
+  See `bills/bulk/approve.bru` for the full envelope.
+}

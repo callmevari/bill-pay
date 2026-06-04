@@ -19,11 +19,11 @@ Live HTTP surface of the Bill Pay API. Grows module by module; each entry matche
 | `POST /bills/:id/line-items`, `PATCH /bills/:id/line-items/:lineItemId`, `DELETE /bills/:id/line-items/:lineItemId` | ✅ | ❌ | ❌ |
 | `POST /bills/:id/submit-for-approval`, `POST /bills/:id/archive` | ✅ | ❌ | ❌ |
 | `POST /bills/:id/approve`, `POST /bills/:id/reject` | ✅ | ✅ | ❌ |
-| `POST /bills/bulk/approve` | ✅ | ✅ | ❌ |
-| `POST /bills/bulk/archive`, `POST /bills/bulk/edit` | ✅ | ❌ | ❌ |
+| `POST /bills/bulk/approve`, `POST /bills/bulk/reject` | ✅ | ✅ | ❌ |
+| `POST /bills/bulk/archive`, `POST /bills/bulk/edit`, `POST /bills/bulk/submit-for-approval` | ✅ | ❌ | ❌ |
 | `GET /payments`, `GET /payments/:id`, `GET /payments/:id/activity` | ✅ | ✅ | ✅ |
 | `POST /payments/:id/{schedule,unschedule,release,mark-as-paid,cancel,retry}` | ✅ | ❌ | ❌ |
-| `POST /payments/bulk/{release,mark-as-paid,cancel}` | ✅ | ❌ | ❌ |
+| `POST /payments/bulk/{release,mark-as-paid,cancel,schedule,retry}` | ✅ | ❌ | ❌ |
 | `GET /exports/bills.csv` | ✅ | ✅ | ✅ |
 
 ---
@@ -350,6 +350,14 @@ Body: `{ ids: string[] }`. Each item runs `POST /bills/:id/archive`. `PAID` and 
 
 Body: `{ ids: string[], fields: { dueDate?: ISO-8601, invoiceDate?: ISO-8601, description?: string | null } }`. `fields` must contain at least one of `dueDate` / `invoiceDate` / `description`; an empty object → `400 VALIDATION_ERROR`. `amount` is intentionally not bulk-editable even though `product-scope.md` lists it — setting the same monetary value across N distinct invoices is rarely the right operation and AP teams that need batch amount changes reach for CSV import (out of scope here). `paymentMethod` is also excluded: the per-bill override exists on the Bill, but the post-payment field lock freezes it the moment a Payment is created, so a mixed bulk run (some pre-approve, some post-approve) would fail per-item on every approved row with `BILL_FIELD_LOCKED_POST_PAYMENT`. Method overrides happen bill-by-bill during creation / approval where the lock state is visible. Terminal bills (`PAID`, `REJECTED`, `ARCHIVED`) fail per-item with `BILL_NOT_EDITABLE`.
 
+#### `POST /bills/bulk/submit-for-approval` — Admin only
+
+Body: `{ ids: string[] }`. Per item: `POST /bills/:id/submit-for-approval`. Items not in `DRAFT` fail with `BILL_INVALID_TRANSITION`.
+
+#### `POST /bills/bulk/reject` — Admin or Approver
+
+Body: `{ ids: string[], notes?: string }`. Per item: `POST /bills/:id/reject` with the same `notes` applied to every Approval row. Per-item notes are out of scope — a bulk reject with N distinct reasons defeats the point. Items not in `PENDING_APPROVAL` fail with `BILL_INVALID_TRANSITION`.
+
 ### Payments
 
 #### `POST /payments/bulk/release` — Admin only
@@ -358,11 +366,19 @@ Body: `{ ids: string[] }`. Per item: `POST /payments/:id/release`. Items not in 
 
 #### `POST /payments/bulk/mark-as-paid` — Admin only
 
-Body: `{ ids: string[] }`. Per item: `POST /payments/:id/mark-as-paid`. Cascades the linked bill to `PAID` per item. Items not in `SCHEDULED` / `INITIATED` fail with `PAYMENT_INVALID_TRANSITION`.
+Body: `{ ids: string[] }`. Per item: `POST /payments/:id/mark-as-paid`. Cascades the linked bill to `PAID` per item. Items not in `UNSCHEDULED` / `SCHEDULED` / `INITIATED` fail with `PAYMENT_INVALID_TRANSITION`.
 
 #### `POST /payments/bulk/cancel` — Admin only
 
-Body: `{ ids: string[] }`. Per item: `POST /payments/:id/cancel`. Cascades the linked bill back to `APPROVED` per item. Items not in `SCHEDULED` / `INITIATED` / `FAILED` fail with `PAYMENT_INVALID_TRANSITION`.
+Body: `{ ids: string[] }`. Per item: `POST /payments/:id/cancel`. Cascade-archives the linked bill per item (the 1-Payment-per-Bill rule, same as the single-item path). Items in `PAID` / `CANCELED` fail with `PAYMENT_INVALID_TRANSITION`.
+
+#### `POST /payments/bulk/schedule` — Admin only
+
+Body: `{ ids: string[], scheduledFor: ISO-8601 }`. Per item: `POST /payments/:id/schedule` with the same date applied uniformly. Per-item dates are out of scope. Items not in `UNSCHEDULED` fail with `PAYMENT_INVALID_TRANSITION`. Missing or malformed `scheduledFor` → `400 VALIDATION_ERROR`.
+
+#### `POST /payments/bulk/retry` — Admin only
+
+Body: `{ ids: string[] }`. Per item: `POST /payments/:id/retry`. Items not in `FAILED` fail with `PAYMENT_INVALID_TRANSITION`.
 
 ---
 

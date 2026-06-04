@@ -1,0 +1,31 @@
+meta {
+  name: Bulk schedule
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/payments/bulk/schedule
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "ids": ["{{paymentId}}"],
+    "scheduledFor": "2026-07-15T00:00:00.000Z"
+  }
+}
+
+docs {
+  Admin only. Applies the same `scheduledFor` ISO timestamp to every
+  supplied UNSCHEDULED payment and flips the linked Bill to SCHEDULED.
+  Per-item dates are out of scope — the bulk action is for "schedule
+  all of these for the same day". Items not in UNSCHEDULED fail per
+  item with PAYMENT_INVALID_TRANSITION.
+
+  Response shape: `{ results: [{ id, ok, data? | error? }], summary }`.
+  Always HTTP 200; empty / duplicate `ids` -> 400 BULK_INVALID_IDS;
+  missing or invalid `scheduledFor` -> 400 VALIDATION_ERROR.
+  See `bills/bulk/approve.bru` for the full envelope.
+}

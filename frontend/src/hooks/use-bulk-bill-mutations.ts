@@ -6,12 +6,11 @@ import {
   type UseMutationResult,
 } from '@tanstack/react-query';
 import { apiFetch, ApiError } from '@/lib/api';
-import { runClientBulk, type BulkResponse } from '@/lib/bulk';
+import type { BulkResponse } from '@/lib/bulk';
 import type { Bill } from '@/lib/api-types';
 
-// Bulk hooks for bills. Each hook returns the documented
-// `{ results, summary }` envelope, regardless of whether the backend
-// exposes a true bulk endpoint or the work is fanned out client-side.
+// Bulk hooks for bills. Every hook calls a native bulk endpoint on the
+// backend and returns the documented `{ results, summary }` envelope.
 //
 // On success/settled, the hook invalidates the bill + bills + activity
 // caches by namespace so every list query refreshes. The result modal
@@ -89,10 +88,6 @@ export function useBulkEditBillsMutation(): UseMutationResult<
   });
 }
 
-// `submit-for-approval` and `reject` are NOT exposed as bulk endpoints on
-// the backend. We fan them out client-side via `runClientBulk` and
-// surface the same envelope shape the bulk endpoints use, so the result
-// modal does not branch on the action type.
 export interface BulkSubmitBillsVariables {
   ids: string[];
 }
@@ -105,9 +100,10 @@ export function useBulkSubmitBillsMutation(): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation<BulkResponse<Bill>, ApiError, BulkSubmitBillsVariables>({
     mutationFn: ({ ids }) =>
-      runClientBulk<Bill>(ids, (id) =>
-        apiFetch<Bill>(`/bills/${id}/submit-for-approval`, { method: 'POST' }),
-      ),
+      apiFetch<BulkResponse<Bill>>('/bills/bulk/submit-for-approval', {
+        method: 'POST',
+        body: { ids },
+      }),
     onSettled: () => invalidateBillCaches(queryClient),
   });
 }
@@ -125,12 +121,10 @@ export function useBulkRejectBillsMutation(): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation<BulkResponse<Bill>, ApiError, BulkRejectBillsVariables>({
     mutationFn: ({ ids, notes }) =>
-      runClientBulk<Bill>(ids, (id) =>
-        apiFetch<Bill>(`/bills/${id}/reject`, {
-          method: 'POST',
-          body: notes ? { notes } : {},
-        }),
-      ),
+      apiFetch<BulkResponse<Bill>>('/bills/bulk/reject', {
+        method: 'POST',
+        body: notes ? { ids, notes } : { ids },
+      }),
     onSettled: () => invalidateBillCaches(queryClient),
   });
 }
