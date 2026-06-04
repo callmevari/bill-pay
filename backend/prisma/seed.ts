@@ -27,6 +27,15 @@ function daysAhead(days: number): Date {
   return daysAgo(-days);
 }
 
+// Seed inserts activity log rows directly via Prisma, bypassing the
+// service helpers that set `createdAt: new Date()` per row in prod.
+// Without explicit offsets the rows tie at the millisecond and the UI
+// timeline can't preserve lifecycle order. A few minutes between rows
+// in the same logical day mirrors how a real transaction would look.
+function plusMinutes(date: Date, minutes: number): Date {
+  return new Date(date.getTime() + minutes * 60_000);
+}
+
 function dec(value: string | number): Prisma.Decimal {
   return new Prisma.Decimal(value);
 }
@@ -154,6 +163,9 @@ interface BillSpec {
   lineItems: { description: string; quantity: string; unitPrice: string }[];
   invoiceDaysAgo: number;
   dueDaysAhead: number;
+  // Per-bill `Bill.paymentMethod` override. When set, beats the
+  // vendor's default at approve time; when omitted the vendor default
+  // drives the resolved Payment.method. Mirrors the runtime contract.
   paymentMethod?: PaymentMethod;
   scheduledDaysAhead?: number;
   initiatedDaysAgo?: number;
@@ -308,14 +320,20 @@ function pendingApprovalBills(): BillSpec[] {
       dueDaysAhead: 23,
     },
     {
+      // Per-bill override: Datadog defaults to ACH, but finance flagged
+      // this quarter's retention add-on for a wire so it clears before
+      // the renewal cutoff. Demonstrates the bill > vendor precedence
+      // on a PENDING_APPROVAL bill (override stored before approve
+      // runs, applied to the auto-created Payment at approve time).
       invoiceNumber: 'INV-2026-0205',
       vendorIndex: 5,
-      description: 'Datadog log retention add-on',
+      description: 'Datadog log retention add-on (WIRE for cutoff timing)',
       status: BillStatus.PENDING_APPROVAL,
       amount: '1900.00',
       lineItems: [{ description: 'Extended retention — 90 days', quantity: '1', unitPrice: '1900.00' }],
       invoiceDaysAgo: 11,
       dueDaysAhead: 19,
+      paymentMethod: PaymentMethod.WIRE,
     },
   ];
 }
@@ -331,7 +349,6 @@ function approvedBills(): BillSpec[] {
       lineItems: [{ description: 'Reserved instance commit', quantity: '1', unitPrice: '24000.00' }],
       invoiceDaysAgo: 14,
       dueDaysAhead: 16,
-      paymentMethod: PaymentMethod.WIRE,
     },
     {
       invoiceNumber: 'INV-2026-0302',
@@ -342,18 +359,21 @@ function approvedBills(): BillSpec[] {
       lineItems: [{ description: 'Atlas annual maintenance', quantity: '1', unitPrice: '500.00' }],
       invoiceDaysAgo: 12,
       dueDaysAhead: 18,
-      paymentMethod: PaymentMethod.ACH,
     },
     {
+      // Per-bill override: Slack defaults to ACH, but finance asked for
+      // a wire on this one Connect add-on so AR can match it against an
+      // existing partner contract. Demonstrates the bill > vendor
+      // precedence on an APPROVED bill.
       invoiceNumber: 'INV-2026-0303',
       vendorIndex: 4,
-      description: 'Slack Connect channels add-on',
+      description: 'Slack Connect channels add-on (one-off WIRE per finance)',
       status: BillStatus.APPROVED,
       amount: '960.00',
       lineItems: [{ description: 'Add-on for external partners', quantity: '12', unitPrice: '80.00' }],
       invoiceDaysAgo: 13,
       dueDaysAhead: 17,
-      paymentMethod: PaymentMethod.ACH,
+      paymentMethod: PaymentMethod.WIRE,
     },
     {
       invoiceNumber: 'INV-2026-0304',
@@ -364,7 +384,6 @@ function approvedBills(): BillSpec[] {
       lineItems: [{ description: 'Bandwidth — April overage', quantity: '1', unitPrice: '3200.00' }],
       invoiceDaysAgo: 15,
       dueDaysAhead: 15,
-      paymentMethod: PaymentMethod.ACH,
     },
     {
       invoiceNumber: 'INV-2026-0305',
@@ -375,7 +394,6 @@ function approvedBills(): BillSpec[] {
       lineItems: [{ description: 'Plus seats add-on', quantity: '12', unitPrice: '150.00' }],
       invoiceDaysAgo: 16,
       dueDaysAhead: 14,
-      paymentMethod: PaymentMethod.ACH,
     },
   ];
 }
@@ -391,7 +409,6 @@ function scheduledBills(): BillSpec[] {
       lineItems: [{ description: 'Compute + storage', quantity: '1', unitPrice: '11320.40' }],
       invoiceDaysAgo: 22,
       dueDaysAhead: 8,
-      paymentMethod: PaymentMethod.WIRE,
       scheduledDaysAhead: 5,
     },
     {
@@ -403,7 +420,6 @@ function scheduledBills(): BillSpec[] {
       lineItems: [{ description: '100 seats — Confluence Premium', quantity: '100', unitPrice: '42.00' }],
       invoiceDaysAgo: 20,
       dueDaysAhead: 10,
-      paymentMethod: PaymentMethod.WIRE,
       scheduledDaysAhead: 7,
     },
     {
@@ -415,7 +431,6 @@ function scheduledBills(): BillSpec[] {
       lineItems: [{ description: 'AI add-on × 32 seats × 3 months', quantity: '96', unitPrice: '10.00' }],
       invoiceDaysAgo: 18,
       dueDaysAhead: 12,
-      paymentMethod: PaymentMethod.ACH,
       scheduledDaysAhead: 9,
     },
     {
@@ -427,7 +442,6 @@ function scheduledBills(): BillSpec[] {
       lineItems: [{ description: 'FigJam seats × 16', quantity: '16', unitPrice: '45.00' }],
       invoiceDaysAgo: 19,
       dueDaysAhead: 11,
-      paymentMethod: PaymentMethod.CARD,
       scheduledDaysAhead: 4,
     },
     {
@@ -439,7 +453,6 @@ function scheduledBills(): BillSpec[] {
       lineItems: [{ description: 'Advanced Security × 120 seats', quantity: '120', unitPrice: '20.00' }],
       invoiceDaysAgo: 21,
       dueDaysAhead: 9,
-      paymentMethod: PaymentMethod.CHECK,
       scheduledDaysAhead: 6,
     },
   ];
@@ -456,21 +469,24 @@ function paidBills(): BillSpec[] {
       lineItems: [{ description: 'Compute + storage', quantity: '1', unitPrice: '10940.10' }],
       invoiceDaysAgo: 52,
       dueDaysAhead: -22,
-      paymentMethod: PaymentMethod.WIRE,
       scheduledDaysAhead: -25,
       initiatedDaysAgo: 25,
       paidDaysAgo: 22,
     },
     {
+      // Per-bill override: Stripe defaults to ACH, but this large April
+      // fee tranche was paid by WIRE for same-day settlement. Captures
+      // the "Stripe invoice paid by WIRE while the rest go ACH" demo
+      // case on a PAID bill so the History tab shows the override.
       invoiceNumber: 'INV-2026-0502',
       vendorIndex: 0,
-      description: 'Stripe platform fees — April',
+      description: 'Stripe platform fees — April (WIRE for same-day settle)',
       status: BillStatus.PAID,
       amount: '3980.00',
       lineItems: [{ description: 'Processing fees — April', quantity: '1', unitPrice: '3980.00' }],
       invoiceDaysAgo: 50,
       dueDaysAhead: -20,
-      paymentMethod: PaymentMethod.ACH,
+      paymentMethod: PaymentMethod.WIRE,
       scheduledDaysAhead: -23,
       initiatedDaysAgo: 23,
       paidDaysAgo: 20,
@@ -484,7 +500,6 @@ function paidBills(): BillSpec[] {
       lineItems: [{ description: 'APM + logs', quantity: '1', unitPrice: '6720.00' }],
       invoiceDaysAgo: 48,
       dueDaysAhead: -18,
-      paymentMethod: PaymentMethod.ACH,
       scheduledDaysAhead: -21,
       initiatedDaysAgo: 21,
       paidDaysAgo: 18,
@@ -498,7 +513,6 @@ function paidBills(): BillSpec[] {
       lineItems: [{ description: '50 seats × $43', quantity: '50', unitPrice: '43.00' }],
       invoiceDaysAgo: 46,
       dueDaysAhead: -16,
-      paymentMethod: PaymentMethod.ACH,
       scheduledDaysAhead: -19,
       initiatedDaysAgo: 19,
       paidDaysAgo: 16,
@@ -512,7 +526,6 @@ function paidBills(): BillSpec[] {
       lineItems: [{ description: 'Pro team seats', quantity: '13', unitPrice: '60.00' }],
       invoiceDaysAgo: 60,
       dueDaysAhead: -30,
-      paymentMethod: PaymentMethod.ACH,
       scheduledDaysAhead: -33,
       initiatedDaysAgo: 33,
       paidDaysAgo: 30,
@@ -526,7 +539,6 @@ function paidBills(): BillSpec[] {
       lineItems: [{ description: '12 plus seats × $150', quantity: '12', unitPrice: '150.00' }],
       invoiceDaysAgo: 58,
       dueDaysAhead: -28,
-      paymentMethod: PaymentMethod.ACH,
       scheduledDaysAhead: -31,
       initiatedDaysAgo: 31,
       paidDaysAgo: 28,
@@ -540,7 +552,6 @@ function paidBills(): BillSpec[] {
       lineItems: [{ description: 'Plugin licenses', quantity: '1', unitPrice: '1200.00' }],
       invoiceDaysAgo: 55,
       dueDaysAhead: -25,
-      paymentMethod: PaymentMethod.WIRE,
       scheduledDaysAhead: -28,
       initiatedDaysAgo: 28,
       paidDaysAgo: 25,
@@ -554,7 +565,6 @@ function paidBills(): BillSpec[] {
       lineItems: [{ description: '120 seats × $42', quantity: '120', unitPrice: '42.00' }],
       invoiceDaysAgo: 56,
       dueDaysAhead: -26,
-      paymentMethod: PaymentMethod.CHECK,
       scheduledDaysAhead: -29,
       initiatedDaysAgo: 29,
       paidDaysAgo: 26,
@@ -573,16 +583,19 @@ function failedPaymentBills(): BillSpec[] {
       lineItems: [{ description: 'Pro plan + APM', quantity: '1', unitPrice: '3200.00' }],
       invoiceDaysAgo: 14,
       dueDaysAhead: 1,
-      paymentMethod: PaymentMethod.ACH,
       scheduledDaysAhead: -2,
       paymentEndState: 'FAILED',
       failedDaysAgo: 1,
       failureReason: 'Insufficient funds on the receiving account.',
     },
     {
+      // Per-bill override: Linear defaults to ACH, this one was wired
+      // and the wire was rejected by the intermediary bank — useful for
+      // demoing both the override path and the FAILED payment recovery
+      // flow in the same row.
       invoiceNumber: 'INV-2026-0702',
       vendorIndex: 6,
-      description: 'Twilio — April messaging',
+      description: 'Twilio — April messaging (WIRE rejected by SWIFT)',
       status: BillStatus.SCHEDULED,
       amount: '845.30',
       lineItems: [{ description: 'SMS + voice minutes', quantity: '1', unitPrice: '845.30' }],
@@ -608,7 +621,6 @@ function canceledPaymentBills(): BillSpec[] {
       lineItems: [{ description: 'Linear seats × 56', quantity: '56', unitPrice: '30.00' }],
       invoiceDaysAgo: 10,
       dueDaysAhead: 5,
-      paymentMethod: PaymentMethod.ACH,
       scheduledDaysAhead: 7,
       paymentEndState: 'CANCELED',
       canceledDaysAgo: 1,
@@ -622,7 +634,6 @@ function canceledPaymentBills(): BillSpec[] {
       lineItems: [{ description: 'Team plan × 1 quarter', quantity: '1', unitPrice: '2160.00' }],
       invoiceDaysAgo: 9,
       dueDaysAhead: 6,
-      paymentMethod: PaymentMethod.CARD,
       scheduledDaysAhead: 8,
       paymentEndState: 'CANCELED',
       canceledDaysAgo: 2,
@@ -690,7 +701,6 @@ function archivedBills(): BillSpec[] {
       lineItems: [{ description: 'Pro team seats — duplicate', quantity: '13', unitPrice: '60.00' }],
       invoiceDaysAgo: 35,
       dueDaysAhead: -5,
-      paymentMethod: PaymentMethod.ACH,
       archivedFrom: 'APPROVED',
     },
     {
@@ -742,23 +752,32 @@ async function seedUsers(): Promise<void> {
   });
 }
 
-async function seedVendors(): Promise<string[]> {
-  const vendorIds: string[] = [];
+interface SeededVendor {
+  id: string;
+  defaultPaymentMethod: PaymentMethod;
+}
+
+async function seedVendors(): Promise<SeededVendor[]> {
+  const vendors: SeededVendor[] = [];
   for (const data of VENDORS_SEED) {
     const vendor = await prisma.vendor.create({ data });
-    vendorIds.push(vendor.id);
+    vendors.push({
+      id: vendor.id,
+      defaultPaymentMethod: vendor.defaultPaymentMethod,
+    });
   }
-  return vendorIds;
+  return vendors;
 }
 
-async function seedBills(vendorIds: string[]): Promise<void> {
+async function seedBills(vendors: SeededVendor[]): Promise<void> {
   for (const spec of BILLS_SEED) {
-    await seedBill(spec, vendorIds);
+    await seedBill(spec, vendors);
   }
 }
 
-async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
-  const vendorId = vendorIds[spec.vendorIndex];
+async function seedBill(spec: BillSpec, vendors: SeededVendor[]): Promise<void> {
+  const vendor = vendors[spec.vendorIndex];
+  const vendorId = vendor.id;
   const invoiceDate = daysAgo(spec.invoiceDaysAgo);
   const dueDate = daysAhead(spec.dueDaysAhead);
   const archivedAt = spec.status === BillStatus.ARCHIVED ? daysAgo(2) : null;
@@ -772,6 +791,7 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       description: spec.description,
       amount: dec(spec.amount),
       currency: 'USD',
+      paymentMethod: spec.paymentMethod ?? null,
       invoiceDate,
       dueDate,
       archivedAt,
@@ -870,7 +890,23 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
     return;
   }
 
-  const paymentMethod = spec.paymentMethod ?? PaymentMethod.ACH;
+  // Mirror BillsService.approve's resolution precedence so seeded bills
+  // and runtime-approved bills behave identically: bill override beats
+  // vendor default. The chain terminates at the vendor because
+  // `Vendor.defaultPaymentMethod` is non-null at the schema level.
+  // `methodSource` is captured on the `payment.created` activity row
+  // for the UI to surface why a particular method was chosen on this
+  // bill.
+  let paymentMethod: PaymentMethod;
+  let methodSource: 'bill' | 'vendor';
+  if (spec.paymentMethod) {
+    paymentMethod = spec.paymentMethod;
+    methodSource = 'bill';
+  } else {
+    paymentMethod = vendor.defaultPaymentMethod;
+    methodSource = 'vendor';
+  }
+  const paymentCreatedAt = plusMinutes(approvedAt, 1);
   const payment = await prisma.payment.create({
     data: {
       billId: bill.id,
@@ -878,7 +914,7 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       method: paymentMethod,
       amount: dec(spec.amount),
       currency: 'USD',
-      createdAt: approvedAt,
+      createdAt: paymentCreatedAt,
     },
   });
 
@@ -890,7 +926,8 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       actorRole: Role.ADMIN,
       action: 'payment.created',
       toStatus: PaymentStatus.UNSCHEDULED,
-      createdAt: approvedAt,
+      metadata: { method: paymentMethod, methodSource, billId: bill.id },
+      createdAt: paymentCreatedAt,
     },
   });
 
@@ -899,7 +936,8 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
   // cancel events explicitly because the standard SCHEDULED-or-PAID
   // branch below would leave the bill at SCHEDULED.
   if (spec.paymentEndState === 'CANCELED' && spec.canceledDaysAgo !== undefined) {
-    const scheduledAt = approvedAt;
+    const paymentScheduledAt = plusMinutes(approvedAt, 2);
+    const billScheduledAt = plusMinutes(approvedAt, 3);
     await prisma.payment.update({
       where: { id: payment.id },
       data: {
@@ -913,14 +951,14 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       'payment.scheduled',
       PaymentStatus.UNSCHEDULED,
       PaymentStatus.SCHEDULED,
-      scheduledAt,
+      paymentScheduledAt,
     );
     await logBillTransition(
       bill.id,
       'bill.scheduled',
       BillStatus.APPROVED,
       BillStatus.SCHEDULED,
-      scheduledAt,
+      billScheduledAt,
     );
 
     const canceledAt = daysAgo(spec.canceledDaysAgo);
@@ -940,7 +978,7 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       'bill.payment_canceled',
       BillStatus.SCHEDULED,
       BillStatus.APPROVED,
-      canceledAt,
+      plusMinutes(canceledAt, 1),
     );
     return;
   }
@@ -953,7 +991,8 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
     spec.status === BillStatus.SCHEDULED ||
     spec.status === BillStatus.PAID
   ) {
-    const scheduledAt = approvedAt;
+    const paymentScheduledAt = plusMinutes(approvedAt, 2);
+    const billScheduledAt = plusMinutes(approvedAt, 3);
     await prisma.payment.update({
       where: { id: payment.id },
       data: {
@@ -967,14 +1006,14 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       'payment.scheduled',
       PaymentStatus.UNSCHEDULED,
       PaymentStatus.SCHEDULED,
-      scheduledAt,
+      paymentScheduledAt,
     );
     await logBillTransition(
       bill.id,
       'bill.scheduled',
       BillStatus.APPROVED,
       BillStatus.SCHEDULED,
-      scheduledAt,
+      billScheduledAt,
     );
   }
 
@@ -1051,7 +1090,7 @@ async function seedBill(spec: BillSpec, vendorIds: string[]): Promise<void> {
       'bill.paid',
       BillStatus.SCHEDULED,
       BillStatus.PAID,
-      paidAt,
+      plusMinutes(paidAt, 1),
     );
   }
 }
@@ -1105,14 +1144,28 @@ async function logPaymentTransition(
 }
 
 async function main(): Promise<void> {
+  // Idempotency guard. The seed is destructive — `wipe()` deletes every
+  // row — so a re-run inside an already-populated database would wipe
+  // the reviewer's in-flight work. We skip when users exist unless the
+  // operator explicitly opts in via `BILLPAY_SEED_FORCE=1`. This keeps
+  // `docker compose up` safe on a warm volume and still lets local devs
+  // refresh demo data on demand.
+  const existingUsers = await prisma.user.count();
+  if (existingUsers > 0 && process.env.BILLPAY_SEED_FORCE !== '1') {
+    logger.log(
+      `Seed skipped — database already contains ${existingUsers} user(s). Set BILLPAY_SEED_FORCE=1 to wipe and reseed.`,
+    );
+    return;
+  }
+
   logger.log('Wiping existing data...');
   await wipe();
   logger.log('Seeding users...');
   await seedUsers();
   logger.log('Seeding vendors...');
-  const vendorIds = await seedVendors();
+  const vendors = await seedVendors();
   logger.log('Seeding bills...');
-  await seedBills(vendorIds);
+  await seedBills(vendors);
 
   const counts = {
     users: await prisma.user.count(),

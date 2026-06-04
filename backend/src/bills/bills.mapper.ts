@@ -5,9 +5,13 @@ import { BillLineItemResponseDto } from './dto/bill-line-item-response.dto';
 import { BillPaymentResponseDto } from './dto/bill-payment-response.dto';
 import { BillResponseDto } from './dto/bill-response.dto';
 
+export type ApprovalWithApprover = Approval & {
+  approver: { name: string };
+};
+
 export type BillWithRelations = Bill & {
   lineItems: BillLineItem[];
-  approvals: Approval[];
+  approvals: ApprovalWithApprover[];
   payment: Payment | null;
 };
 
@@ -32,12 +36,13 @@ export function toBillLineItemResponse(
 }
 
 export function toBillApprovalResponse(
-  approval: Approval,
+  approval: ApprovalWithApprover,
 ): BillApprovalResponseDto {
   return {
     id: approval.id,
     billId: approval.billId,
     approverId: approval.approverId,
+    approverName: approval.approver.name,
     status: approval.status,
     notes: approval.notes,
     createdAt: approval.createdAt.toISOString(),
@@ -77,6 +82,7 @@ export function toBillResponse(bill: BillWithRelations): BillResponseDto {
     description: bill.description,
     amount: bill.amount.toFixed(2),
     currency: bill.currency,
+    paymentMethod: bill.paymentMethod,
     invoiceDate: bill.invoiceDate.toISOString(),
     dueDate: bill.dueDate.toISOString(),
     archivedAt: bill.archivedAt ? bill.archivedAt.toISOString() : null,

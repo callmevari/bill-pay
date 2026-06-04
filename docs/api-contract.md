@@ -19,11 +19,11 @@ Live HTTP surface of the Bill Pay API. Grows module by module; each entry matche
 | `POST /bills/:id/line-items`, `PATCH /bills/:id/line-items/:lineItemId`, `DELETE /bills/:id/line-items/:lineItemId` | ✅ | ❌ | ❌ |
 | `POST /bills/:id/submit-for-approval`, `POST /bills/:id/archive` | ✅ | ❌ | ❌ |
 | `POST /bills/:id/approve`, `POST /bills/:id/reject` | ✅ | ✅ | ❌ |
-| `POST /bills/bulk/approve` | ✅ | ✅ | ❌ |
-| `POST /bills/bulk/archive`, `POST /bills/bulk/edit` | ✅ | ❌ | ❌ |
+| `POST /bills/bulk/approve`, `POST /bills/bulk/reject` | ✅ | ✅ | ❌ |
+| `POST /bills/bulk/archive`, `POST /bills/bulk/edit`, `POST /bills/bulk/submit-for-approval` | ✅ | ❌ | ❌ |
 | `GET /payments`, `GET /payments/:id`, `GET /payments/:id/activity` | ✅ | ✅ | ✅ |
 | `POST /payments/:id/{schedule,unschedule,release,mark-as-paid,cancel,retry}` | ✅ | ❌ | ❌ |
-| `POST /payments/bulk/{release,mark-as-paid,cancel}` | ✅ | ❌ | ❌ |
+| `POST /payments/bulk/{release,mark-as-paid,cancel,schedule,retry}` | ✅ | ❌ | ❌ |
 | `GET /exports/bills.csv` | ✅ | ✅ | ✅ |
 
 ---
@@ -67,12 +67,12 @@ List vendors, paginated.
 
 ### `POST /vendors` — Admin only
 
-**Body** (`name` required; all else optional):
+**Body** (`name` and `defaultPaymentMethod` required; all else optional):
 ```json
 {
   "name": "Acme Corp",
-  "email": "ap@acme.com",
   "defaultPaymentMethod": "ACH",
+  "email": "ap@acme.com",
   "streetAddress": "1 Market St",
   "city": "San Francisco",
   "state": "CA",
@@ -81,7 +81,7 @@ List vendors, paginated.
   "notes": "Net 30"
 }
 ```
-`defaultPaymentMethod` ∈ `ACH | WIRE | CHECK | CARD | OFF_PLATFORM`.
+`defaultPaymentMethod` ∈ `ACH | WIRE | CHECK | CARD | OFF_PLATFORM`. Required — the approve flow falls back to it when a bill carries no per-bill override, so leaving it blank would silently route to ACH; we surface that decision to the user at vendor-create time instead.
 
 **201** → bare `VendorResponse`. **400 VALIDATION_ERROR** on invalid body. **403 INSUFFICIENT_PERMISSIONS** for non-Admin.
 
@@ -120,7 +120,7 @@ Paginated list with filters and sorts.
 - `q` — free-text, case-insensitive, matches `invoiceNumber`, `description`, or `vendor.name`.
 - `sort` — one of `createdAt | updatedAt | amount | status | dueDate | invoiceDate | invoiceNumber | vendor`, optionally prefixed with `-` for descending. Default `-createdAt`. `vendor` sorts by `vendor.name`.
 
-**200** → `{ data: BillResponse[], meta }`. Each `BillResponse` includes its `lineItems` array, its `approvals` array (empty until the bill is submitted; one row per Approval after that), and its `payment` (the linked Payment snapshot, `null` until the bill is approved).
+**200** → `{ data: BillResponse[], meta }`. Each `BillResponse` includes its `lineItems` array, its `approvals` array (empty until the bill is submitted; one row per Approval after that, each row carrying `approverId` plus the approver's `approverName` joined at read time), and its `payment` (the linked Payment snapshot, `null` until the bill is approved).
 
 ### `GET /bills/:id`
 
@@ -136,6 +136,7 @@ Paginated list with filters and sorts.
   "description": "May infrastructure",
   "amount": "12480.55",
   "currency": "USD",
+  "paymentMethod": "WIRE",
   "invoiceDate": "2026-05-01T00:00:00.000Z",
   "dueDate": "2026-05-31T00:00:00.000Z",
   "archivedAt": null,
@@ -158,6 +159,8 @@ Paginated list with filters and sorts.
 }
 ```
 
+`paymentMethod` (`ACH | WIRE | CHECK | CARD | OFF_PLATFORM | null`) is the per-bill override of the vendor's default. When set, it wins over `vendor.defaultPaymentMethod` at approve time (resolution order documented under `POST /bills/:id/approve`). `null` means "fall back to the vendor".
+
 ### `POST /bills` — Admin only
 
 Creates a bill in `DRAFT`. The acting user is recorded as `createdById`. Line items may be supplied inline; their `total` is computed server-side.
@@ -170,6 +173,7 @@ Creates a bill in `DRAFT`. The acting user is recorded as `createdById`. Line it
   "description": "May infrastructure",
   "amount": "12480.55",
   "currency": "USD",
+  "paymentMethod": "WIRE",
   "invoiceDate": "2026-05-01T00:00:00.000Z",
   "dueDate": "2026-05-31T00:00:00.000Z",
   "lineItems": [
@@ -178,7 +182,7 @@ Creates a bill in `DRAFT`. The acting user is recorded as `createdById`. Line it
 }
 ```
 
-`currency` is a 3-letter uppercase ISO 4217 code (e.g. `"USD"`) and defaults to `"USD"` when omitted. `dueDate` must be on or after `invoiceDate`.
+`currency` is a 3-letter uppercase ISO 4217 code (e.g. `"USD"`) and defaults to `"USD"` when omitted. `dueDate` must be on or after `invoiceDate`. `paymentMethod` is an optional per-bill override of the vendor default — see `POST /bills/:id/approve` for the resolution rule.
 
 **201** → bare `BillResponse`. **400 VALIDATION_ERROR** on invalid body — including `null` on any required-non-null field, decimals outside `Decimal(12, 2)`, currency not matching `^[A-Z]{3}$`, or `dueDate < invoiceDate`. **403 INSUFFICIENT_PERMISSIONS** for non-Admin. **404 VENDOR_NOT_FOUND** if `vendorId` does not reference an existing vendor (pre-checked and also re-translated from a Prisma FK race). **409 UNIQUE_CONSTRAINT_VIOLATION** when `(vendorId, invoiceNumber)` already exists.
 
@@ -186,7 +190,7 @@ Creates a bill in `DRAFT`. The acting user is recorded as `createdById`. Line it
 
 Updates an editable bill. `vendorId`, `invoiceNumber`, and line items are not patchable here — line items have their own sub-resource. `description` is the only nullable field (send `null` to clear); the others reject `null`.
 
-**Body**: any subset of `description?: string | null`, `amount?: string`, `currency?: string`, `invoiceDate?: ISO-8601`, `dueDate?: ISO-8601`. Same shape rules as create — `amount` is bounded to `Decimal(12, 2)`, `currency` must match `^[A-Z]{3}$`, and the resulting `dueDate` must remain on or after `invoiceDate`.
+**Body**: any subset of `description?: string | null`, `amount?: string`, `currency?: string`, `paymentMethod?: PaymentMethod | null`, `invoiceDate?: ISO-8601`, `dueDate?: ISO-8601`. Same shape rules as create — `amount` is bounded to `Decimal(12, 2)`, `currency` must match `^[A-Z]{3}$`, and the resulting `dueDate` must remain on or after `invoiceDate`. `paymentMethod` accepts either a `PaymentMethod` enum value or `null` (clears the override and falls back to the vendor default at approve time); unknown enum values → `400 VALIDATION_ERROR`.
 
 **200** → updated `BillResponse`. **400 VALIDATION_ERROR** on invalid body. **404 NOT_FOUND** if missing. **409 BILL_NOT_EDITABLE** (`details: { status }`) when the bill's status is terminal (`PAID`, `REJECTED`, or `ARCHIVED`). **403** for non-Admin.
 
@@ -225,7 +229,7 @@ Four action endpoints drive the bill through its state machine. Each is a `POST`
 
 #### `POST /bills/:id/approve` — Admin or Approver
 
-`PENDING_APPROVAL → APPROVED`. Updates the existing `Approval` row to `APPROVED` and sets `approverId` to the acting user (the actual approver, which may be an Admin). Creates the linked `Payment` row in `UNSCHEDULED` with `method = vendor.defaultPaymentMethod ?? 'ACH'` and `amount` / `currency` copied from the bill. **200** → updated `BillResponse`. **409 BILL_INVALID_TRANSITION** if the bill is not in `PENDING_APPROVAL`. A `payment.created` `ActivityLog` row is written alongside the `bill.approved` entry.
+`PENDING_APPROVAL → APPROVED`. Updates the existing `Approval` row to `APPROVED` and sets `approverId` to the acting user (the actual approver, which may be an Admin). Creates the linked `Payment` row in `UNSCHEDULED` with `amount` / `currency` copied from the bill and `method` resolved as **`bill.paymentMethod ?? vendor.defaultPaymentMethod`** — per-bill override beats vendor default. The chain terminates at the vendor because `Vendor.defaultPaymentMethod` is non-null at the schema level. **200** → updated `BillResponse`. **409 BILL_INVALID_TRANSITION** if the bill is not in `PENDING_APPROVAL`. A `payment.created` `ActivityLog` row is written alongside the `bill.approved` entry; its `metadata` carries `{ "method": <resolved>, "methodSource": "bill" | "vendor", "billId": <bill.id> }` so the UI can explain why a particular method was chosen.
 
 #### `POST /bills/:id/reject` — Admin or Approver
 
@@ -344,7 +348,15 @@ Body: `{ ids: string[] }`. Each item runs `POST /bills/:id/archive`. `PAID` and 
 
 #### `POST /bills/bulk/edit` — Admin only
 
-Body: `{ ids: string[], fields: { dueDate?: ISO-8601, description?: string | null } }`. `fields` must contain at least one of `dueDate` / `description`; an empty object → `400 VALIDATION_ERROR`. `paymentMethod` is intentionally not bulk-editable — it lives on the linked `Payment`, not on the Bill. Terminal bills (`PAID`, `REJECTED`, `ARCHIVED`) fail per-item with `BILL_NOT_EDITABLE`.
+Body: `{ ids: string[], fields: { dueDate?: ISO-8601, invoiceDate?: ISO-8601, description?: string | null } }`. `fields` must contain at least one of `dueDate` / `invoiceDate` / `description`; an empty object → `400 VALIDATION_ERROR`. `amount` is intentionally not bulk-editable even though `product-scope.md` lists it — setting the same monetary value across N distinct invoices is rarely the right operation and AP teams that need batch amount changes reach for CSV import (out of scope here). `paymentMethod` is also excluded: the per-bill override exists on the Bill, but the post-payment field lock freezes it the moment a Payment is created, so a mixed bulk run (some pre-approve, some post-approve) would fail per-item on every approved row with `BILL_FIELD_LOCKED_POST_PAYMENT`. Method overrides happen bill-by-bill during creation / approval where the lock state is visible. Terminal bills (`PAID`, `REJECTED`, `ARCHIVED`) fail per-item with `BILL_NOT_EDITABLE`.
+
+#### `POST /bills/bulk/submit-for-approval` — Admin only
+
+Body: `{ ids: string[] }`. Per item: `POST /bills/:id/submit-for-approval`. Items not in `DRAFT` fail with `BILL_INVALID_TRANSITION`.
+
+#### `POST /bills/bulk/reject` — Admin or Approver
+
+Body: `{ ids: string[], notes?: string }`. Per item: `POST /bills/:id/reject` with the same `notes` applied to every Approval row. Per-item notes are out of scope — a bulk reject with N distinct reasons defeats the point. Items not in `PENDING_APPROVAL` fail with `BILL_INVALID_TRANSITION`.
 
 ### Payments
 
@@ -354,11 +366,19 @@ Body: `{ ids: string[] }`. Per item: `POST /payments/:id/release`. Items not in 
 
 #### `POST /payments/bulk/mark-as-paid` — Admin only
 
-Body: `{ ids: string[] }`. Per item: `POST /payments/:id/mark-as-paid`. Cascades the linked bill to `PAID` per item. Items not in `SCHEDULED` / `INITIATED` fail with `PAYMENT_INVALID_TRANSITION`.
+Body: `{ ids: string[] }`. Per item: `POST /payments/:id/mark-as-paid`. Cascades the linked bill to `PAID` per item. Items not in `UNSCHEDULED` / `SCHEDULED` / `INITIATED` fail with `PAYMENT_INVALID_TRANSITION`.
 
 #### `POST /payments/bulk/cancel` — Admin only
 
-Body: `{ ids: string[] }`. Per item: `POST /payments/:id/cancel`. Cascades the linked bill back to `APPROVED` per item. Items not in `SCHEDULED` / `INITIATED` / `FAILED` fail with `PAYMENT_INVALID_TRANSITION`.
+Body: `{ ids: string[] }`. Per item: `POST /payments/:id/cancel`. Cascade-archives the linked bill per item (the 1-Payment-per-Bill rule, same as the single-item path). Items in `PAID` / `CANCELED` fail with `PAYMENT_INVALID_TRANSITION`.
+
+#### `POST /payments/bulk/schedule` — Admin only
+
+Body: `{ ids: string[], scheduledFor: ISO-8601 }`. Per item: `POST /payments/:id/schedule` with the same date applied uniformly. Per-item dates are out of scope. Items not in `UNSCHEDULED` fail with `PAYMENT_INVALID_TRANSITION`. Missing or malformed `scheduledFor` → `400 VALIDATION_ERROR`.
+
+#### `POST /payments/bulk/retry` — Admin only
+
+Body: `{ ids: string[] }`. Per item: `POST /payments/:id/retry`. Items not in `FAILED` fail with `PAYMENT_INVALID_TRANSITION`.
 
 ---
 

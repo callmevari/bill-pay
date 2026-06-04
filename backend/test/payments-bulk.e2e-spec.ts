@@ -213,17 +213,27 @@ describe('Payments bulk (e2e)', () => {
       paymentStatus: PaymentStatus.SCHEDULED,
       invoiceNumber: 'INV-CAN-1',
     });
+    // UNSCHEDULED payments are also cancelable now ("we decided not to
+    // pay this approved bill"); both rows should succeed.
     const unscheduled = await seedBillWithPayment({
       billStatus: BillStatus.APPROVED,
       paymentStatus: PaymentStatus.UNSCHEDULED,
       invoiceNumber: 'INV-CAN-2',
       scheduledFor: undefined,
     });
+    // PAID is the terminal-success status — cannot be canceled.
+    const paid = await seedBillWithPayment({
+      billStatus: BillStatus.PAID,
+      paymentStatus: PaymentStatus.PAID,
+      invoiceNumber: 'INV-CAN-3',
+    });
 
     const res = await request(app.getHttpServer())
       .post('/api/v1/payments/bulk/cancel')
       .set('x-user-id', actors.admin.id)
-      .send({ ids: [scheduled.payment.id, unscheduled.payment.id] });
+      .send({
+        ids: [scheduled.payment.id, unscheduled.payment.id, paid.payment.id],
+      });
 
     expect(res.status).toBe(200);
     const body = res.body as {
@@ -234,8 +244,134 @@ describe('Payments bulk (e2e)', () => {
       }[];
       summary: { total: number; succeeded: number; failed: number };
     };
-    expect(body.summary).toEqual({ total: 2, succeeded: 1, failed: 1 });
+    expect(body.summary).toEqual({ total: 3, succeeded: 2, failed: 1 });
     expect(body.results[0].ok).toBe(true);
-    expect(body.results[1].error?.code).toBe('PAYMENT_INVALID_TRANSITION');
+    expect(body.results[1].ok).toBe(true);
+    expect(body.results[2].error?.code).toBe('PAYMENT_INVALID_TRANSITION');
+  });
+
+  // ---- schedule ---------------------------------------------------
+
+  it('POST /payments/bulk/schedule applies the same scheduledFor to every UNSCHEDULED payment and flips the linked bill to SCHEDULED', async () => {
+    const a = await seedBillWithPayment({
+      billStatus: BillStatus.APPROVED,
+      paymentStatus: PaymentStatus.UNSCHEDULED,
+      invoiceNumber: 'INV-SCHED-A',
+    });
+    const b = await seedBillWithPayment({
+      billStatus: BillStatus.APPROVED,
+      paymentStatus: PaymentStatus.UNSCHEDULED,
+      invoiceNumber: 'INV-SCHED-B',
+    });
+    const paid = await seedBillWithPayment({
+      billStatus: BillStatus.PAID,
+      paymentStatus: PaymentStatus.PAID,
+      invoiceNumber: 'INV-SCHED-PAID',
+    });
+
+    const scheduledFor = '2026-07-15T00:00:00.000Z';
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/payments/bulk/schedule')
+      .set('x-user-id', actors.admin.id)
+      .send({
+        ids: [a.payment.id, b.payment.id, paid.payment.id],
+        scheduledFor,
+      });
+
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      results: Array<{
+        id: string;
+        ok: boolean;
+        data?: { status: string; scheduledFor: string };
+        error?: { code: string };
+      }>;
+      summary: { total: number; succeeded: number; failed: number };
+    };
+    expect(body.summary).toEqual({ total: 3, succeeded: 2, failed: 1 });
+    const byId = new Map(body.results.map((r) => [r.id, r]));
+    expect(byId.get(a.payment.id)?.data?.status).toBe('SCHEDULED');
+    expect(byId.get(a.payment.id)?.data?.scheduledFor).toBe(scheduledFor);
+    expect(byId.get(b.payment.id)?.data?.scheduledFor).toBe(scheduledFor);
+    expect(byId.get(paid.payment.id)?.error?.code).toBe(
+      'PAYMENT_INVALID_TRANSITION',
+    );
+
+    const billA = await prisma.bill.findUniqueOrThrow({
+      where: { id: a.bill.id },
+    });
+    expect(billA.status).toBe(BillStatus.SCHEDULED);
+  });
+
+  it('POST /payments/bulk/schedule without scheduledFor returns 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/payments/bulk/schedule')
+      .set('x-user-id', actors.admin.id)
+      .send({ ids: ['anything'] });
+    expect(res.status).toBe(400);
+    expect((res.body as { error: { code: string } }).error.code).toBe(
+      'VALIDATION_ERROR',
+    );
+  });
+
+  it('POST /payments/bulk/schedule as Viewer returns 403', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/payments/bulk/schedule')
+      .set('x-user-id', actors.viewer.id)
+      .send({ ids: ['anything'], scheduledFor: '2026-07-15T00:00:00.000Z' });
+    expect(res.status).toBe(403);
+  });
+
+  // ---- retry ------------------------------------------------------
+
+  it('POST /payments/bulk/retry sends every FAILED payment back to SCHEDULED and rejects non-FAILED items', async () => {
+    const a = await seedBillWithPayment({
+      billStatus: BillStatus.SCHEDULED,
+      paymentStatus: PaymentStatus.FAILED,
+      invoiceNumber: 'INV-RETRY-A',
+      scheduledFor: new Date('2026-06-01T00:00:00.000Z'),
+    });
+    const b = await seedBillWithPayment({
+      billStatus: BillStatus.SCHEDULED,
+      paymentStatus: PaymentStatus.FAILED,
+      invoiceNumber: 'INV-RETRY-B',
+      scheduledFor: new Date('2026-06-01T00:00:00.000Z'),
+    });
+    const scheduled = await seedBillWithPayment({
+      billStatus: BillStatus.SCHEDULED,
+      paymentStatus: PaymentStatus.SCHEDULED,
+      invoiceNumber: 'INV-RETRY-SCHED',
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/payments/bulk/retry')
+      .set('x-user-id', actors.admin.id)
+      .send({ ids: [a.payment.id, b.payment.id, scheduled.payment.id] });
+
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      results: Array<{
+        id: string;
+        ok: boolean;
+        data?: { status: string };
+        error?: { code: string };
+      }>;
+      summary: { total: number; succeeded: number; failed: number };
+    };
+    expect(body.summary).toEqual({ total: 3, succeeded: 2, failed: 1 });
+    const byId = new Map(body.results.map((r) => [r.id, r]));
+    expect(byId.get(a.payment.id)?.data?.status).toBe('SCHEDULED');
+    expect(byId.get(b.payment.id)?.data?.status).toBe('SCHEDULED');
+    expect(byId.get(scheduled.payment.id)?.error?.code).toBe(
+      'PAYMENT_INVALID_TRANSITION',
+    );
+  });
+
+  it('POST /payments/bulk/retry as Approver returns 403', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/payments/bulk/retry')
+      .set('x-user-id', actors.approver.id)
+      .send({ ids: ['anything'] });
+    expect(res.status).toBe(403);
   });
 });

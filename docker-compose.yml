@@ -16,5 +16,77 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    # Pin the image name so the `studio` profile (which references
+    # `bill-pay-backend:latest` to reuse this build) resolves regardless
+    # of the compose project name. Without an explicit `image:`, Docker
+    # would name the build after the directory and Studio would try to
+    # pull from a registry on a cold clone.
+    image: bill-pay-backend:latest
+    container_name: billpay-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/billpay?schema=public
+      PORT: "3001"
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+    healthcheck:
+      # The Nest health controller answers on `/api/v1/health` once the
+      # app has booted and migrations have applied; the frontend waits
+      # on this before it starts.
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/v1/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # Opt-in Prisma Studio. Off by default so the standard
+  # `docker compose up` stays minimal; bring it up with
+  #   `docker compose --profile studio up --build`
+  # to inspect the live database at http://localhost:5555.
+  # Reuses the backend image (Prisma CLI is already inside it). No
+  # auth on the Studio UI — only meant for local review against
+  # demo data.
+  prisma-studio:
+    profiles: ["studio"]
+    image: bill-pay-backend:latest
+    container_name: billpay-studio
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/billpay?schema=public
+    ports:
+      - "5555:5555"
+    command: ["./node_modules/.bin/prisma", "studio", "--port", "5555", "--browser", "none", "--hostname", "0.0.0.0"]
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        # The Next standalone build inlines `NEXT_PUBLIC_*` at build
+        # time, so the browser-visible API URL must be set here too,
+        # not only at runtime. Reviewers running on `localhost` see the
+        # backend exposed at host port 3001 (above), which the browser
+        # can reach directly.
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:3001/api/v1
+    container_name: billpay-web
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:3001/api/v1
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
 volumes:
   postgres-data:

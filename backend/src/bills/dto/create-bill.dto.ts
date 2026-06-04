@@ -1,11 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { PaymentMethod } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsEnum,
   IsISO8601,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
   ValidateIf,
@@ -16,11 +19,21 @@ import { IsCurrencyCode } from '../../common/dto/currency';
 import { IsDecimal12_2 } from '../../common/dto/decimal-string';
 import { CreateBillLineItemDto } from './create-bill-line-item.dto';
 
+// Permissive on purpose — invoice numbers come from the vendor, not us,
+// and real-world formats include slashes, dots, hashes, parens, and
+// spaces. We block the obviously-dangerous characters (`?`, `$`, `%`,
+// `&`, `!`, `*`, quotes, brackets, etc.) so a bad header doesn't sneak
+// through into CSV exports or URLs.
+const INVOICE_NUMBER_PATTERN = /^[\w\-._/# ()]+$/;
+const INVOICE_NUMBER_MESSAGE =
+  'invoiceNumber may only contain letters, digits, spaces, and the characters - _ . / # ( ).';
+
 export class CreateBillDto {
   @ApiProperty({ example: 'INV-2026-0099' })
   @IsString()
   @MinLength(1)
   @MaxLength(60)
+  @Matches(INVOICE_NUMBER_PATTERN, { message: INVOICE_NUMBER_MESSAGE })
   invoiceNumber: string;
 
   @ApiProperty({
@@ -49,6 +62,15 @@ export class CreateBillDto {
   @ValidateIf((_, value) => value !== undefined)
   @IsCurrencyCode()
   currency?: string;
+
+  @ApiPropertyOptional({
+    enum: PaymentMethod,
+    description:
+      'Optional per-bill override. Resolved at approve time as bill > vendor.defaultPaymentMethod.',
+  })
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  paymentMethod?: PaymentMethod;
 
   @ApiProperty({ format: 'date-time', example: '2026-05-01T00:00:00.000Z' })
   @IsISO8601()

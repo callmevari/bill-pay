@@ -222,6 +222,7 @@ describe('Bills bulk (e2e)', () => {
         ids: [draftBill.id, approvedBill.id, paidBill.id],
         fields: {
           dueDate: '2026-08-15T00:00:00.000Z',
+          invoiceDate: '2026-08-01T00:00:00.000Z',
           description: 'Updated in bulk',
         },
       });
@@ -247,9 +248,15 @@ describe('Bills bulk (e2e)', () => {
     });
     expect(draftAfter?.description).toBe('Updated in bulk');
     expect(draftAfter?.dueDate.toISOString()).toBe('2026-08-15T00:00:00.000Z');
+    expect(draftAfter?.invoiceDate.toISOString()).toBe(
+      '2026-08-01T00:00:00.000Z',
+    );
     expect(approvedAfter?.description).toBe('Updated in bulk');
     expect(approvedAfter?.dueDate.toISOString()).toBe(
       '2026-08-15T00:00:00.000Z',
+    );
+    expect(approvedAfter?.invoiceDate.toISOString()).toBe(
+      '2026-08-01T00:00:00.000Z',
     );
     expect(paidAfter?.description).toBeNull();
 
@@ -282,6 +289,94 @@ describe('Bills bulk (e2e)', () => {
         ids: ['anything'],
         fields: { description: 'no' },
       });
+    expect(res.status).toBe(403);
+  });
+
+  it('POST /bills/bulk/submit-for-approval transitions DRAFTs, fails non-DRAFTs per item, opens an Approval row for each success', async () => {
+    const draftA = await insertBill(BillStatus.DRAFT, 'INV-SUB-A');
+    const draftB = await insertBill(BillStatus.DRAFT, 'INV-SUB-B');
+    const approved = await insertBill(BillStatus.APPROVED, 'INV-SUB-APPROVED');
+
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/bills/bulk/submit-for-approval')
+      .set('x-user-id', actors.admin.id)
+      .send({ ids: [draftA.id, draftB.id, approved.id] });
+
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      results: Array<{
+        id: string;
+        ok: boolean;
+        data?: { status: string };
+        error?: { code: string };
+      }>;
+      summary: { total: number; succeeded: number; failed: number };
+    };
+    expect(body.summary).toEqual({ total: 3, succeeded: 2, failed: 1 });
+    const byId = new Map(body.results.map((r) => [r.id, r]));
+    expect(byId.get(draftA.id)?.data?.status).toBe('PENDING_APPROVAL');
+    expect(byId.get(draftB.id)?.data?.status).toBe('PENDING_APPROVAL');
+    expect(byId.get(approved.id)?.error?.code).toBe('BILL_INVALID_TRANSITION');
+
+    const approvals = await prisma.approval.findMany({
+      where: { billId: { in: [draftA.id, draftB.id] } },
+    });
+    expect(approvals).toHaveLength(2);
+    expect(approvals.every((a) => a.status === ApprovalStatus.PENDING)).toBe(
+      true,
+    );
+  });
+
+  it('POST /bills/bulk/submit-for-approval as Approver returns 403', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/bills/bulk/submit-for-approval')
+      .set('x-user-id', actors.approver.id)
+      .send({ ids: ['anything'] });
+    expect(res.status).toBe(403);
+  });
+
+  it('POST /bills/bulk/reject moves PENDING_APPROVAL bills to REJECTED with uniform notes recorded on every Approval row', async () => {
+    const a = await insertBill(BillStatus.PENDING_APPROVAL, 'INV-REJ-A');
+    const b = await insertBill(BillStatus.PENDING_APPROVAL, 'INV-REJ-B');
+    const draft = await insertBill(BillStatus.DRAFT, 'INV-REJ-DRAFT');
+
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/bills/bulk/reject')
+      .set('x-user-id', actors.approver.id)
+      .send({ ids: [a.id, b.id, draft.id], notes: 'Wrong period.' });
+
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      results: Array<{
+        id: string;
+        ok: boolean;
+        data?: { status: string };
+        error?: { code: string };
+      }>;
+      summary: { total: number; succeeded: number; failed: number };
+    };
+    expect(body.summary).toEqual({ total: 3, succeeded: 2, failed: 1 });
+    const byId = new Map(body.results.map((r) => [r.id, r]));
+    expect(byId.get(a.id)?.data?.status).toBe('REJECTED');
+    expect(byId.get(b.id)?.data?.status).toBe('REJECTED');
+    expect(byId.get(draft.id)?.error?.code).toBe('BILL_INVALID_TRANSITION');
+
+    const approvals = await prisma.approval.findMany({
+      where: { billId: { in: [a.id, b.id] } },
+    });
+    expect(approvals.every((appr) => appr.notes === 'Wrong period.')).toBe(
+      true,
+    );
+    expect(
+      approvals.every((appr) => appr.status === ApprovalStatus.REJECTED),
+    ).toBe(true);
+  });
+
+  it('POST /bills/bulk/reject as Viewer returns 403', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/bills/bulk/reject')
+      .set('x-user-id', actors.viewer.id)
+      .send({ ids: ['anything'] });
     expect(res.status).toBe(403);
   });
 });

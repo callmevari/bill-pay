@@ -50,7 +50,10 @@ const BILL_STATUSES = new Set<string>(Object.values(BillStatus));
 
 const billInclude = {
   lineItems: true,
-  approvals: { orderBy: { createdAt: 'asc' } },
+  approvals: {
+    orderBy: { createdAt: 'asc' },
+    include: { approver: { select: { name: true } } },
+  },
   payment: true,
 } as const;
 
@@ -137,12 +140,13 @@ export class BillsService {
       try {
         created = await tx.bill.create({
           data: {
-            invoiceNumber: dto.invoiceNumber,
+            invoiceNumber: normalizeInvoiceNumber(dto.invoiceNumber),
             vendorId: dto.vendorId,
             createdById: actor.id,
             description: dto.description ?? null,
             amount: new Prisma.Decimal(dto.amount),
             currency: dto.currency ?? 'USD',
+            paymentMethod: dto.paymentMethod ?? null,
             invoiceDate,
             dueDate,
             lineItems:
@@ -199,6 +203,40 @@ export class BillsService {
   ): Promise<BillResponseDto> {
     const current = await this.ensureEditable(id);
 
+    // Post-payment lock on financial fields. Once the linked Payment
+    // exists in a non-cancelled state the operator already committed
+    // to a number; editing the bill's `amount` / `currency` here would
+    // create a silent drift with `Payment.amount` / `Payment.currency`
+    // that we have no way to reconcile. `paymentMethod` is already
+    // locked by the FE form but we belt-and-brace it here so a direct
+    // PATCH (Bruno, curl) cannot bypass the rule either.
+    // `description`, `dueDate`, and `invoiceDate` stay editable —
+    // memo and tracking fields don't affect the payment, and
+    // `invoiceDate` is honest metadata an operator may need to correct
+    // for a typo after the fact.
+    const POST_PAYMENT_LOCKED_FIELDS = [
+      'amount',
+      'currency',
+      'paymentMethod',
+    ] as const;
+    const hasActivePayment =
+      current.payment !== null && current.payment.status !== 'CANCELED';
+    if (hasActivePayment) {
+      const attemptedLocked = POST_PAYMENT_LOCKED_FIELDS.filter(
+        (field) => dto[field] !== undefined,
+      );
+      if (attemptedLocked.length > 0) {
+        throw new ConflictException({
+          code: ErrorCode.BILL_FIELD_LOCKED_POST_PAYMENT,
+          message: `Cannot edit ${attemptedLocked.join(', ')} on a bill whose Payment already exists.`,
+          details: {
+            lockedFields: attemptedLocked,
+            paymentStatus: current.payment?.status,
+          },
+        });
+      }
+    }
+
     const data: Prisma.BillUpdateInput = {};
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.amount !== undefined) data.amount = new Prisma.Decimal(dto.amount);
@@ -206,6 +244,7 @@ export class BillsService {
     if (dto.invoiceDate !== undefined)
       data.invoiceDate = new Date(dto.invoiceDate);
     if (dto.dueDate !== undefined) data.dueDate = new Date(dto.dueDate);
+    if (dto.paymentMethod !== undefined) data.paymentMethod = dto.paymentMethod;
 
     if (dto.invoiceDate !== undefined || dto.dueDate !== undefined) {
       const nextInvoiceDate =
@@ -426,10 +465,15 @@ export class BillsService {
 
       // After CAS, read the bill state so vendor lookup and Payment
       // creation see the post-transition view (covers a concurrent PATCH
-      // changing amount/currency before the CAS).
+      // changing amount/currency/paymentMethod before the CAS).
       const updatedBill = await tx.bill.findUniqueOrThrow({
         where: { id },
-        select: { vendorId: true, amount: true, currency: true },
+        select: {
+          vendorId: true,
+          amount: true,
+          currency: true,
+          paymentMethod: true,
+        },
       });
       const vendor = await tx.vendor.findUnique({
         where: { id: updatedBill.vendorId },
@@ -441,7 +485,21 @@ export class BillsService {
           message: 'Vendor not found.',
         });
       }
-      const paymentMethod = vendor.defaultPaymentMethod ?? PaymentMethod.ACH;
+      // Payment-method precedence: per-bill override > vendor default.
+      // The chain terminates at the vendor because
+      // `Vendor.defaultPaymentMethod` is non-null at the schema level.
+      // Source is recorded on the `payment.created` activity row so the
+      // UI can explain why a particular method was chosen ("Stripe
+      // invoice paid by WIRE for this bill only").
+      let paymentMethod: PaymentMethod;
+      let methodSource: 'bill' | 'vendor';
+      if (updatedBill.paymentMethod !== null) {
+        paymentMethod = updatedBill.paymentMethod;
+        methodSource = 'bill';
+      } else {
+        paymentMethod = vendor.defaultPaymentMethod;
+        methodSource = 'vendor';
+      }
 
       // MVP invariant: exactly one Approval row per bill (created at
       // `submitForApproval`). See `docs/backend.md → Approval`.
@@ -482,7 +540,12 @@ export class BillsService {
           actorRole: actor.role,
           action: 'payment.created',
           toStatus: PaymentStatus.UNSCHEDULED,
-          metadata: { method: paymentMethod, billId: id },
+          metadata: {
+            method: paymentMethod,
+            methodSource,
+            billId: id,
+          },
+          createdAt: new Date(),
         },
       });
 
@@ -614,6 +677,7 @@ export class BillsService {
               fromStatus: existingPayment.status,
               toStatus: PaymentStatus.CANCELED,
               metadata: { triggeredBy: 'bill.archived' },
+              createdAt: new Date(),
             },
           });
           cancelledPaymentId = existingPayment.id;
@@ -739,6 +803,11 @@ export class BillsService {
     toStatus: BillStatus,
     metadata?: Record<string, unknown>,
   ): Promise<void> {
+    // Explicit `new Date()` instead of `@default(now())`: Postgres' `now()`
+    // is `transaction_timestamp()` and ties for every row inserted in the
+    // same `$transaction`, which destroys lifecycle ordering when two log
+    // rows are written in the same flow. A JS-side timestamp captures the
+    // moment the helper is called, which advances between awaits.
     await tx.activityLog.create({
       data: {
         entityType: ActivityEntityType.BILL,
@@ -749,6 +818,7 @@ export class BillsService {
         fromStatus,
         toStatus,
         metadata: (metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+        createdAt: new Date(),
       },
     });
   }
@@ -824,6 +894,7 @@ export class BillsService {
         actorRole: actor.role,
         action,
         metadata: metadata as Prisma.InputJsonValue,
+        createdAt: new Date(),
       },
     });
   }
@@ -897,4 +968,13 @@ export class BillsService {
     }
     return { [field]: order };
   }
+}
+
+// Trim outer whitespace and collapse internal runs of spaces. Vendor
+// invoice numbers occasionally land with stray padding ("  INV-001  ")
+// or double-spaces; persisting the cleaned form keeps search + the
+// unique constraint stable. Allowed-character validation lives on the
+// DTO (`Matches(INVOICE_NUMBER_PATTERN)`).
+function normalizeInvoiceNumber(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
 }

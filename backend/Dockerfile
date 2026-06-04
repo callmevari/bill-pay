@@ -13,6 +13,11 @@
 #   docker run --rm -p 3001:3001 \
 #     -e DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/billpay?schema=public \
 #     billpay-api
+#
+# The entrypoint runs `prisma migrate deploy` then `prisma db seed`.
+# Both are idempotent — migrate skips applied migrations, seed skips
+# itself when the database already contains users (override with
+# `BILLPAY_SEED_FORCE=1`).
 
 # ---- deps -----------------------------------------------------------
 FROM node:22-alpine AS deps
@@ -79,11 +84,16 @@ COPY --from=prod-deps /workspace/backend/node_modules /workspace/backend/node_mo
 COPY --from=build /workspace/backend/dist ./dist
 COPY --from=build /workspace/backend/package.json ./package.json
 COPY --from=build /workspace/backend/prisma ./prisma
+# `prisma db seed` reads the seed command from `prisma.config.ts` (the
+# Prisma 6 replacement for the `prisma.seed` field in `package.json`).
+# Without this file the CLI silently exits 0 with no work done.
+COPY --from=build /workspace/backend/prisma.config.ts ./prisma.config.ts
 
 EXPOSE 3001
 
 # `migrate deploy` is idempotent: it applies any pending migrations
 # without prompting and is the production-safe equivalent of
-# `migrate dev`. The CLI is now part of the production install, so no
-# `npx` fetch on startup.
-CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node dist/main.js"]
+# `migrate dev`. `db seed` carries its own no-op guard so a warm volume
+# is not wiped. Both CLIs live in `dependencies`, so no `npx` fetch on
+# startup.
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/prisma db seed && node dist/main.js"]

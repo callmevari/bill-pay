@@ -87,16 +87,10 @@ export class PaymentsService {
         { scheduledFor },
       );
 
-      // Propagate to Bill: APPROVED -> SCHEDULED.
-      await this.casBillFromPayment(
-        tx,
-        payment.billId,
-        [BillStatus.APPROVED],
-        BillStatus.SCHEDULED,
-        actor,
-        'bill.scheduled',
-      );
-
+      // Log the payment action BEFORE the bill cascade so the activity
+      // timeline reflects lifecycle causality (the payment moved, that
+      // caused the bill to follow). The CAS already happened; this is
+      // just the audit order.
       await this.logPaymentTransition(
         tx,
         id,
@@ -105,6 +99,16 @@ export class PaymentsService {
         fromStatus,
         PaymentStatus.SCHEDULED,
         { scheduledFor: scheduledFor.toISOString() },
+      );
+
+      // Propagate to Bill: APPROVED -> SCHEDULED.
+      await this.casBillFromPayment(
+        tx,
+        payment.billId,
+        [BillStatus.APPROVED],
+        BillStatus.SCHEDULED,
+        actor,
+        'bill.scheduled',
       );
 
       return tx.payment.findUniqueOrThrow({ where: { id } });
@@ -123,6 +127,16 @@ export class PaymentsService {
         { scheduledFor: null },
       );
 
+      // Log payment action before propagating (lifecycle causality).
+      await this.logPaymentTransition(
+        tx,
+        id,
+        actor,
+        'payment.unscheduled',
+        fromStatus,
+        PaymentStatus.UNSCHEDULED,
+      );
+
       // Bill SCHEDULED -> APPROVED.
       await this.casBillFromPayment(
         tx,
@@ -131,15 +145,6 @@ export class PaymentsService {
         BillStatus.APPROVED,
         actor,
         'bill.unscheduled',
-      );
-
-      await this.logPaymentTransition(
-        tx,
-        id,
-        actor,
-        'payment.unscheduled',
-        fromStatus,
-        PaymentStatus.UNSCHEDULED,
       );
 
       return tx.payment.findUniqueOrThrow({ where: { id } });
@@ -175,22 +180,21 @@ export class PaymentsService {
   async markAsPaid(id: string, actor: AuthUser): Promise<PaymentResponseDto> {
     const paidAt = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
+      // UNSCHEDULED is allowed — covers the OFF_PLATFORM case (paid
+      // externally with cash / check) and back-dated rail payments
+      // recorded after the fact. Real AP products (Ramp, Bill.com)
+      // let the operator skip the Schedule -> Initiated path when
+      // there is no rail to coordinate.
       const { fromStatus, payment } = await this.casPaymentTransition(
         tx,
         id,
-        [PaymentStatus.SCHEDULED, PaymentStatus.INITIATED],
+        [
+          PaymentStatus.UNSCHEDULED,
+          PaymentStatus.SCHEDULED,
+          PaymentStatus.INITIATED,
+        ],
         PaymentStatus.PAID,
         { paidAt },
-      );
-
-      // Bill -> PAID (from SCHEDULED).
-      await this.casBillFromPayment(
-        tx,
-        payment.billId,
-        [BillStatus.SCHEDULED],
-        BillStatus.PAID,
-        actor,
-        'bill.paid',
       );
 
       await this.logPaymentTransition(
@@ -202,6 +206,22 @@ export class PaymentsService {
         PaymentStatus.PAID,
       );
 
+      // Bill propagation: from UNSCHEDULED the bill is APPROVED and
+      // jumps straight to PAID; from SCHEDULED / INITIATED the bill is
+      // currently SCHEDULED and follows the normal cascade.
+      const billAllowedFrom =
+        fromStatus === PaymentStatus.UNSCHEDULED
+          ? [BillStatus.APPROVED]
+          : [BillStatus.SCHEDULED];
+      await this.casBillFromPayment(
+        tx,
+        payment.billId,
+        billAllowedFrom,
+        BillStatus.PAID,
+        actor,
+        'bill.paid',
+      );
+
       return tx.payment.findUniqueOrThrow({ where: { id } });
     });
     return toPaymentResponse(updated);
@@ -210,26 +230,26 @@ export class PaymentsService {
   async cancel(id: string, actor: AuthUser): Promise<PaymentResponseDto> {
     const canceledAt = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
+      // UNSCHEDULED is allowed — operators routinely decide not to pay
+      // an approved-but-unscheduled bill (vendor dispute, duplicate
+      // invoice, internal cancellation) without ever scheduling it.
+      // The cancel cascades the bill to ARCHIVED in every case: the
+      // system creates exactly one Payment per Bill at approve time
+      // and there is no path to re-create it, so a canceled payment
+      // leaves the bill with no forward motion. Surfacing an APPROVED
+      // bill with a CANCELED payment row reads as a stuck workflow;
+      // archiving it makes the audit trail honest about the dead-end.
       const { fromStatus, payment } = await this.casPaymentTransition(
         tx,
         id,
         [
+          PaymentStatus.UNSCHEDULED,
           PaymentStatus.SCHEDULED,
           PaymentStatus.INITIATED,
           PaymentStatus.FAILED,
         ],
         PaymentStatus.CANCELED,
         { canceledAt },
-      );
-
-      // Bill SCHEDULED -> APPROVED (un-schedules the bill).
-      await this.casBillFromPayment(
-        tx,
-        payment.billId,
-        [BillStatus.SCHEDULED],
-        BillStatus.APPROVED,
-        actor,
-        'bill.payment_canceled',
       );
 
       await this.logPaymentTransition(
@@ -240,6 +260,37 @@ export class PaymentsService {
         fromStatus,
         PaymentStatus.CANCELED,
       );
+
+      // Cascade-archive the bill. The bill can currently be in any
+      // non-terminal state depending on where the payment was; cover
+      // every legal origin.
+      const fresh = await tx.bill.findUniqueOrThrow({
+        where: { id: payment.billId },
+        select: { status: true },
+      });
+      const billAllowedFrom: BillStatus[] = [
+        BillStatus.APPROVED,
+        BillStatus.SCHEDULED,
+      ];
+      if (billAllowedFrom.includes(fresh.status)) {
+        await tx.bill.update({
+          where: { id: payment.billId },
+          data: { status: BillStatus.ARCHIVED, archivedAt: new Date() },
+        });
+        await tx.activityLog.create({
+          data: {
+            entityType: ActivityEntityType.BILL,
+            entityId: payment.billId,
+            actorId: actor.id,
+            actorRole: actor.role,
+            action: 'bill.archived',
+            fromStatus: fresh.status,
+            toStatus: BillStatus.ARCHIVED,
+            metadata: { triggeredBy: 'payment.cancel' },
+            createdAt: new Date(),
+          },
+        });
+      }
 
       return tx.payment.findUniqueOrThrow({ where: { id } });
     });
@@ -383,6 +434,11 @@ export class PaymentsService {
         },
       });
     }
+    // Explicit `new Date()` instead of `@default(now())`: see the
+    // matching note on `BillsService.logBillTransition` — Postgres'
+    // transaction_timestamp ties for every row in the same tx, which
+    // breaks lifecycle ordering when a payment action propagates to
+    // the bill.
     await tx.activityLog.create({
       data: {
         entityType: ActivityEntityType.BILL,
@@ -393,6 +449,7 @@ export class PaymentsService {
         fromStatus: fresh.status,
         toStatus: to,
         metadata: { triggeredBy: 'payment' },
+        createdAt: new Date(),
       },
     });
   }
@@ -416,6 +473,7 @@ export class PaymentsService {
         fromStatus,
         toStatus,
         metadata: (metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+        createdAt: new Date(),
       },
     });
   }

@@ -5,13 +5,15 @@
   "description": "Accounts payable workspace inspired by Ramp Bill Pay.",
   "packageManager": "pnpm@11.3.0",
   "engines": {
-    "node": ">=20"
+    "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
+    "dev": "pnpm --parallel --filter backend --filter frontend run dev",
     "backend:dev": "pnpm --filter backend run dev",
     "backend:build": "pnpm --filter backend run build",
     "backend:test": "pnpm --filter backend run test",
     "frontend:dev": "pnpm --filter frontend run dev",
-    "frontend:build": "pnpm --filter frontend run build"
+    "frontend:build": "pnpm --filter frontend run build",
+    "frontend:test": "pnpm --filter frontend run test"
   }
 }

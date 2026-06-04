@@ -1,0 +1,27 @@
+meta {
+  name: Bulk submit-for-approval
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/bills/bulk/submit-for-approval
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "ids": ["{{billId}}"]
+  }
+}
+
+docs {
+  Admin only. Submits every supplied DRAFT bill for approval; each item
+  opens a fresh PENDING Approval row. Items not in DRAFT fail per item
+  with BILL_INVALID_TRANSITION.
+
+  Response shape: `{ results: [{ id, ok, data? | error? }], summary }`.
+  Always HTTP 200; empty / duplicate `ids` -> 400 BULK_INVALID_IDS.
+  See `bills/bulk/approve.bru` for the full envelope.
+}

@@ -90,7 +90,10 @@ export class ActivityService {
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.activityLog.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        // Secondary sort by id keeps the result deterministic when two
+        // log rows tie at the millisecond (services now set createdAt
+        // explicitly per row, but a future tx might still collide).
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         include: { actor: { select: { name: true } } },
         skip: (page - 1) * pageSize,
         take: pageSize,

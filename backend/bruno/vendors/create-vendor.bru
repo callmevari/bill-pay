@@ -34,4 +34,9 @@ docs {
   Admin only. On 201 the new id is stored in the `vendorId` var so the
   get/update/delete requests below can run against it. Switch to the
   approver or viewer environment to confirm a 403.
+
+  `name` and `defaultPaymentMethod` are required — omitting either
+  returns 400 VALIDATION_ERROR. The vendor default is consulted on
+  every bill the vendor backs, so the model treats "no default" as a
+  data-entry mistake rather than a valid state.
 }

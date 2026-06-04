@@ -19,6 +19,12 @@ export class BillApprovalResponseDto {
   })
   approverId: string;
 
+  @ApiProperty({
+    description:
+      'Display name of the approver joined at read time, so renames flow through without rewriting historical Approval rows.',
+  })
+  approverName: string;
+
   @ApiProperty({ enum: ApprovalStatus })
   status: ApprovalStatus;
 
