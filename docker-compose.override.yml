@@ -1,0 +1,29 @@
+# Dev-only port bindings.
+#
+# `docker compose up` auto-loads this file alongside `docker-compose.yml`,
+# so the local stack stays reachable from the dev machine on the
+# documented host ports. Prod brings the stack up with an explicit file
+# list (`-f docker-compose.yml -f docker-compose.prod.yml`) which
+# DISABLES the auto-merge of this override — only Caddy publishes
+# ports in production.
+#
+# Every binding is scoped to `127.0.0.1` so a dev machine on an
+# untrusted network does not silently expose the database or the API
+# to LAN peers.
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  backend:
+    ports:
+      - "127.0.0.1:3001:3001"
+
+  frontend:
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  prisma-studio:
+    ports:
+      - "127.0.0.1:5555:5555"
