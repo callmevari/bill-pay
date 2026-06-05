@@ -2,6 +2,17 @@
 
 An accounts payable workspace inspired by Ramp Bill Pay. Manage vendors, create and approve bills, schedule payments, and audit every state change through a complete activity log.
 
+## Live demo
+
+| Surface | URL |
+|---|---|
+| App | <https://billpay.arsoft.work> |
+| API health | <https://billpay.arsoft.work/api/v1/health> |
+| Swagger | <https://billpay.arsoft.work/docs> |
+| Prisma Studio | <https://studio.billpay.arsoft.work> (basic auth — credentials shared separately with the reviewer) |
+
+The deploy is fronted by Caddy on AWS Lightsail (Ubuntu 24.04) with Let's Encrypt certificates auto-renewed. Use the top-bar **Acting as** switcher to swap between the three seeded roles (Admin / Approver / Viewer).
+
 ## Setup
 
 Two supported paths. Both start with cloning the repo.

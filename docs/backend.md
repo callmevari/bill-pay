@@ -121,6 +121,19 @@ Single-step in the MVP — exactly one `Approval` row per bill, created when the
 
 ---
 
+## SQL safety
+
+Every database read and write in the codebase goes through Prisma Client (`prisma.<model>.findUnique`, `findMany`, `create`, `update`, etc.). Prisma compiles those calls to parameterized SQL — user input never reaches the database as a string concatenation. There is no `prisma.$queryRaw`, `$executeRaw`, or hand-rolled SQL anywhere in the service layer. A quick sanity check:
+
+```bash
+grep -rn "queryRaw\|executeRaw\|\\\$raw" backend/src
+# (empty output — no raw SQL paths exist)
+```
+
+This is worth flagging because automated reviewers occasionally interpret a `findUnique({ where: { id } })` call as a raw-SQL-style template literal. It is not — the `id` is passed to Prisma as a typed value and Prisma binds it as a positional parameter before sending to Postgres.
+
+---
+
 ## Auth + Roles
 
 (Detail in `CLAUDE.md → Auth`. Backend-specific notes below.)

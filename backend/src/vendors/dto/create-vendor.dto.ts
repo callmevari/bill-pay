@@ -1,8 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentMethod } from '@prisma/client';
 import {
+  IsDefined,
   IsEmail,
   IsEnum,
+  IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
@@ -10,8 +12,16 @@ import {
 } from 'class-validator';
 
 export class CreateVendorDto {
+  // `name` and `defaultPaymentMethod` are required: class-validator
+  // already rejects `undefined` on a non-`@IsOptional` property, but
+  // `@IsDefined` + `@IsNotEmpty` make the contract explicit in the DTO
+  // itself so an external reviewer reading the file does not have to
+  // know the implicit class-validator default.
+
   @ApiProperty({ example: 'Stripe, Inc.' })
+  @IsDefined({ message: 'name is required.' })
   @IsString()
+  @IsNotEmpty({ message: 'name must not be empty.' })
   @MinLength(1)
   @MaxLength(200)
   name: string;
@@ -22,6 +32,7 @@ export class CreateVendorDto {
   email?: string;
 
   @ApiProperty({ enum: PaymentMethod })
+  @IsDefined({ message: 'defaultPaymentMethod is required.' })
   @IsEnum(PaymentMethod)
   defaultPaymentMethod: PaymentMethod;
 
