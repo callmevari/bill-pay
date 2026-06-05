@@ -1,0 +1,50 @@
+# Caddy configuration for the production stack.
+#
+# Substitution: every `{$VAR}` token is replaced at Caddy config-load
+# time from the container environment. The `caddy` service in
+# `docker-compose.prod.yml` passes the values through from the project's
+# `.env` file, so the Caddyfile itself stays repo-safe and reusable
+# across deployments.
+#
+# Routes:
+#   https://{$DOMAIN}/api/*   -> backend:3001   (Nest API)
+#   https://{$DOMAIN}/*       -> frontend:3000  (Next.js standalone)
+#   https://{$STUDIO_SUBDOMAIN}/ -> prisma-studio:5555 (basic-auth gated)
+
+{
+	email {$ADMIN_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy backend:3001
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	log {
+		output stdout
+		format console
+		level INFO
+	}
+}
+
+{$STUDIO_SUBDOMAIN} {
+	encode zstd gzip
+
+	basic_auth {
+		{$STUDIO_USER} {$STUDIO_PASSWORD_HASH}
+	}
+
+	reverse_proxy prisma-studio:5555
+
+	log {
+		output stdout
+		format console
+		level INFO
+	}
+}
