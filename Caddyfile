@@ -36,7 +36,7 @@
 {$STUDIO_SUBDOMAIN} {
 	encode zstd gzip
 
-	basicauth {
+	basic_auth {
 		{$STUDIO_USER} {$STUDIO_PASSWORD_HASH}
 	}
 
