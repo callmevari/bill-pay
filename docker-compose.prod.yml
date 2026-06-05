@@ -1,0 +1,87 @@
+# Production override for the stack defined in `docker-compose.yml`.
+# Bring it up with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     --env-file .env --profile studio up -d --build
+#
+# Differences vs the dev compose:
+#  - Caddy is the only public-facing service (80 / 443). The backend,
+#    frontend, and Prisma Studio drop their host port bindings and stay
+#    reachable only on the internal Docker network.
+#  - Postgres lives on a host bind mount so the data survives a
+#    `compose down` and is easy to back up.
+#  - `restart: unless-stopped` on every service so a VM reboot brings
+#    the stack back automatically.
+#  - The frontend's `NEXT_PUBLIC_API_BASE_URL` is inlined at build time
+#    so the browser bundle calls `https://${DOMAIN}/api/v1` directly.
+#  - The `studio` profile is on by default; Caddy depends on it.
+#
+# Required env vars (set them in `.env` next to this file):
+#   DOMAIN, STUDIO_SUBDOMAIN, ADMIN_EMAIL,
+#   STUDIO_USER, STUDIO_PASSWORD_HASH,
+#   POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+
+services:
+  postgres:
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports: []
+    volumes:
+      - /var/lib/billpay-data:/var/lib/postgresql/data
+
+  backend:
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      PORT: "3001"
+    ports: []
+    expose:
+      - "3001"
+
+  frontend:
+    restart: unless-stopped
+    build:
+      args:
+        NEXT_PUBLIC_API_BASE_URL: https://${DOMAIN}/api/v1
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: https://${DOMAIN}/api/v1
+    ports: []
+    expose:
+      - "3000"
+
+  prisma-studio:
+    restart: unless-stopped
+    expose:
+      - "5555"
+    ports: []
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: billpay-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      STUDIO_SUBDOMAIN: ${STUDIO_SUBDOMAIN}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      STUDIO_USER: ${STUDIO_USER}
+      STUDIO_PASSWORD_HASH: ${STUDIO_PASSWORD_HASH}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+      prisma-studio:
+        condition: service_started
+
+volumes:
+  caddy-data:
+  caddy-config:
