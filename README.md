@@ -73,7 +73,7 @@ What was left out and why:
 - **Real auth** — replaced by a header-based `x-user-id` against three seeded users (Admin / Approver / Viewer). The role guard, permission matrix, and 403 envelopes all behave production-shaped; only the credential surface is mocked.
 - **Multi-step approval chains** — the model supports it (one PENDING `Approval` row per Bill, designed to extend), but the MVP fires a single approval.
 - **Sidebar "coming soon" decoy nav** — kept the visual fidelity to the Ramp reference for one phase, then removed: nav items that do nothing add cognitive load on review.
-- **Mobile responsive polish** — desktop-first is the AP product reality, and the brief budget did not justify a second pass.
+- **Mobile responsive polish** — desktop-first matches the AP workflow (long tables, multi-column filters, line-item editing) which is hard to compress onto a phone screen meaningfully. The layout degrades gracefully on a tablet; a true mobile pass would require its own design exploration.
 
 ## Architecture + data model decisions
 
