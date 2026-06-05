@@ -13,7 +13,9 @@
 #    the stack back automatically.
 #  - The frontend's `NEXT_PUBLIC_API_BASE_URL` is inlined at build time
 #    so the browser bundle calls `https://${DOMAIN}/api/v1` directly.
-#  - The `studio` profile is on by default; Caddy depends on it.
+#  - Prisma Studio stays gated behind the `studio` profile from the
+#    base compose. Pass `--profile studio` to expose it via Caddy at
+#    `https://${STUDIO_SUBDOMAIN}/`; omit it for an API-only deploy.
 #
 # Required env vars (set them in `.env` next to this file):
 #   DOMAIN, STUDIO_SUBDOMAIN, ADMIN_EMAIL,
@@ -30,6 +32,15 @@ services:
     ports: []
     volumes:
       - /var/lib/billpay-data:/var/lib/postgresql/data
+    # Override the base compose healthcheck — its `pg_isready -U postgres
+    # -d billpay` is hardcoded, but here those values come from the env
+    # so a non-default `POSTGRES_USER` / `POSTGRES_DB` would leave the
+    # service permanently unhealthy and block backend startup.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   backend:
     restart: unless-stopped
@@ -74,12 +85,16 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    # Caddy waits on backend health + frontend boot. `prisma-studio` is
+    # intentionally NOT listed: it lives behind the `studio` profile in
+    # the base compose, so when the operator brings the stack up without
+    # `--profile studio` the service is not created and Caddy must still
+    # be allowed to start. Caddy resolves `prisma-studio:5555` lazily
+    # per request and returns a clean 502 when Studio is absent.
     depends_on:
       backend:
         condition: service_healthy
       frontend:
-        condition: service_started
-      prisma-studio:
         condition: service_started
 
 volumes:
