@@ -6,8 +6,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: billpay
-    ports:
-      - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -33,8 +31,6 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/billpay?schema=public
       PORT: "3001"
-    ports:
-      - "3001:3001"
     restart: unless-stopped
     healthcheck:
       # The Nest health controller answers on `/api/v1/health` once the
@@ -49,10 +45,11 @@ services:
   # Opt-in Prisma Studio. Off by default so the standard
   # `docker compose up` stays minimal; bring it up with
   #   `docker compose --profile studio up --build`
-  # to inspect the live database at http://localhost:5555.
+  # to inspect the live database at http://localhost:5555 (when the
+  # dev port binding from `docker-compose.override.yml` is loaded).
   # Reuses the backend image (Prisma CLI is already inside it). No
-  # auth on the Studio UI — only meant for local review against
-  # demo data.
+  # auth on the Studio UI itself — meant for local review against
+  # demo data; the production override puts it behind Caddy basic auth.
   prisma-studio:
     profiles: ["studio"]
     image: bill-pay-backend:latest
@@ -62,8 +59,6 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/billpay?schema=public
-    ports:
-      - "5555:5555"
     command: ["./node_modules/.bin/prisma", "studio", "--port", "5555", "--browser", "none", "--hostname", "0.0.0.0"]
     restart: unless-stopped
 
@@ -75,18 +70,21 @@ services:
         # The Next standalone build inlines `NEXT_PUBLIC_*` at build
         # time, so the browser-visible API URL must be set here too,
         # not only at runtime. Reviewers running on `localhost` see the
-        # backend exposed at host port 3001 (above), which the browser
-        # can reach directly.
+        # backend exposed at host port 3001 (via the override file
+        # auto-loaded for dev), which the browser can reach directly.
+        # The production override re-builds with the public HTTPS URL.
         NEXT_PUBLIC_API_BASE_URL: http://localhost:3001/api/v1
     container_name: billpay-web
     depends_on:
       backend:
         condition: service_healthy
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:3001/api/v1
-    ports:
-      - "3000:3000"
     restart: unless-stopped
 
+# This file declares no host port bindings. Compose merges `ports`
+# additively, so an override file cannot REMOVE a binding declared
+# here. To keep prod safe (only Caddy on 80/443), every dev-only host
+# port binding lives in `docker-compose.override.yml` — auto-loaded by
+# `docker compose up` for local dev and explicitly excluded when prod
+# is brought up via `-f docker-compose.yml -f docker-compose.prod.yml`.
 volumes:
   postgres-data:
