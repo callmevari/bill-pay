@@ -23,7 +23,6 @@
 #
 # Required env vars (set them in `.env` next to this file):
 #   DOMAIN, STUDIO_SUBDOMAIN, ADMIN_EMAIL,
-#   STUDIO_USER, STUDIO_PASSWORD_HASH,
 #   POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
 
 services:
@@ -79,8 +78,6 @@ services:
       DOMAIN: ${DOMAIN}
       STUDIO_SUBDOMAIN: ${STUDIO_SUBDOMAIN}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
-      STUDIO_USER: ${STUDIO_USER}
-      STUDIO_PASSWORD_HASH: ${STUDIO_PASSWORD_HASH}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
