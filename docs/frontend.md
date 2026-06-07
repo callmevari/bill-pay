@@ -166,7 +166,7 @@ Every `useQuery` consumer renders these instead of inlining their own loading/er
 - Forms (`BillForm` shared by `/bills/new` and `/bills/[id]/edit`, `VendorFormDialog`, `LineItemFormDialog`), `ConfirmDialog` body for destructive flows.
 - Bill lifecycle action cluster on the detail page; payment lifecycle inline on bills-index rows and on the detail page.
 - Line item editing on the bill detail page (add / edit / remove) via the backend's dedicated sub-resource endpoints. Gated by both `useCan('bill.lineItem.write')` and a non-terminal bill status (`EDITABLE_BILL_STATUSES`), mirroring the backend's `ensureEditable` rule.
-- `paymentMethod` was intentionally NOT in the bill form at this point — the backend did not yet accept it on `POST /bills`. Phase 11 lands the override; see below.
+- `paymentMethod` is exposed in the bill form as an optional override of the vendor default; see the "Bill `paymentMethod` override" entry below for the wire semantics (`null` clears the override, `undefined` leaves it unchanged) and the activity-timeline badge that explains why a non-default method was used.
 
 ### Phase 11 — Bulk, exports, activity, paymentMethod override
 
