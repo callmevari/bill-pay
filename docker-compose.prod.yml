@@ -64,6 +64,14 @@ services:
 
   prisma-studio:
     restart: unless-stopped
+    # The base compose hardcodes Studio's DATABASE_URL to
+    # `postgres:postgres@postgres:5432/billpay` for local dev. In prod,
+    # Postgres runs with the operator-provided credentials from `.env`,
+    # so without this override Studio authenticates against the wrong
+    # password, opens cleanly, and shows every table as 0 rows.
+    # Reuse the same DATABASE_URL shape the backend service already has.
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
     expose:
       - "5555"
 
