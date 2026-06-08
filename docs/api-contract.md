@@ -248,8 +248,6 @@ Four action endpoints drive the bill through its state machine. Each is a `POST`
 
 **Side effect — cancel-on-archive (Approval).** If the bill had a `PENDING` Approval (i.e. it was archived from `PENDING_APPROVAL`), that Approval row is transitioned to **`CANCELED`** inside the same transaction so it stops surfacing in approvers' queues. **Approvals already in `APPROVED` or `REJECTED` are never rewritten** — those are real human decisions and the audit trail keeps them. When at least one Approval was cancelled, the `bill.archived` activity entry's `metadata` carries `{ "cancelledApprovals": <count> }`.
 
-**Note**: archiving from `SCHEDULED` is allowed by the lifecycle table but is not reachable from the Phase 5 API surface — `Bill.status = SCHEDULED` only appears via seeded data, since the endpoint that schedules a payment lands in Phase 6. When that arrives, cancel-on-archive will be extended to in-flight Payments too.
-
 **200** → updated `BillResponse` (with the possibly-CANCELED Approval visible in `approvals[]`). **409 BILL_INVALID_TRANSITION** if the bill is `PAID` or already `ARCHIVED`. The `bill.archived` activity entry records the originating status in `fromStatus`.
 
 ### Error codes (Bills)
@@ -291,13 +289,13 @@ Every lifecycle action is `200`, CAS-atomic on `Payment.status`, runs in a singl
 | `schedule` | `UNSCHEDULED → SCHEDULED` | `{ "scheduledFor": ISO-8601 }` | Set `scheduledFor`; Bill `APPROVED → SCHEDULED`. Past timestamps are accepted for back-dating operational scenarios; the contract does not enforce future-only. |
 | `unschedule` | `SCHEDULED → UNSCHEDULED` | none | Clear `scheduledFor`; Bill `SCHEDULED → APPROVED` |
 | `release` | `SCHEDULED → INITIATED` | none | Set `initiatedAt` |
-| `mark-as-paid` | `SCHEDULED \| INITIATED → PAID` | none | Set `paidAt`; Bill `SCHEDULED → PAID` |
-| `cancel` | `SCHEDULED \| INITIATED \| FAILED → CANCELED` | none | Set `canceledAt`; Bill `SCHEDULED → APPROVED` |
+| `mark-as-paid` | `UNSCHEDULED \| SCHEDULED \| INITIATED → PAID` | none | Set `paidAt`; Bill cascades to `PAID` from `APPROVED` (UNSCHEDULED origin, OFF_PLATFORM use case) or from `SCHEDULED` (rail-driven path). |
+| `cancel` | `UNSCHEDULED \| SCHEDULED \| INITIATED \| FAILED → CANCELED` | none | Set `canceledAt`; cascade-archive the linked Bill (`APPROVED \| SCHEDULED → ARCHIVED`) in the same transaction. Encodes the one-Payment-per-Bill invariant — a CANCELED Payment leaves the Bill with no forward motion, so the archive makes the dead end honest in the audit trail. The resulting `bill.archived` row carries `metadata: { triggeredBy: "payment.cancel" }`. |
 | `retry` | `FAILED → SCHEDULED` | none | Clear `failedAt`, `failureReason` |
 
 ### Cancel-on-archive
 
-`POST /bills/:id/archive` (Phase 5) cancels an in-flight Payment (`UNSCHEDULED`, `SCHEDULED`, `INITIATED`, or `FAILED`) in the same transaction as the bill archive, sets `Payment.canceledAt`, and records `metadata: { cancelledPayment: paymentId }` on the `bill.archived` activity entry. A sibling `payment.canceled` entry is written with `metadata: { triggeredBy: "bill.archived" }`.
+`POST /bills/:id/archive` cancels an in-flight Payment (`UNSCHEDULED`, `SCHEDULED`, `INITIATED`, or `FAILED`) in the same transaction as the bill archive, sets `Payment.canceledAt`, and records the cascade on the `bill.archived` activity entry's `metadata`: `{ cancelledPayment: paymentId }` (when a Payment was cancelled) and / or `{ cancelledApprovals: <count> }` (when at least one `PENDING` Approval was cancelled). Both keys can co-exist on the same row when both side effects fired. A sibling `payment.canceled` entry is written with `metadata: { triggeredBy: "bill.archived" }`.
 
 ### Error codes (Payments)
 

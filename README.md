@@ -9,7 +9,7 @@ An accounts payable workspace inspired by Ramp Bill Pay. Manage vendors, create 
 | App | <https://billpay.arsoft.work> |
 | API health | <https://billpay.arsoft.work/api/v1/health> |
 | Swagger | <https://billpay.arsoft.work/docs> |
-| Prisma Studio | <https://studio.billpay.arsoft.work> (basic auth — credentials shared separately with the reviewer) |
+| Prisma Studio | <https://studio.billpay.arsoft.work> |
 
 The deploy is fronted by Caddy on AWS Lightsail (Ubuntu 24.04) with Let's Encrypt certificates auto-renewed. Use the top-bar **Acting as** switcher to swap between the three seeded roles (Admin / Approver / Viewer).
 
@@ -72,7 +72,6 @@ What was left out and why:
 - **CSV import** — the export half ships; the import half doesn't. It's an entire UX track (column mapping, dry-run, partial-success reporting) and the brief prioritised export.
 - **Real auth** — replaced by a header-based `x-user-id` against three seeded users (Admin / Approver / Viewer). The role guard, permission matrix, and 403 envelopes all behave production-shaped; only the credential surface is mocked.
 - **Multi-step approval chains** — the model supports it (one PENDING `Approval` row per Bill, designed to extend), but the MVP fires a single approval.
-- **Sidebar "coming soon" decoy nav** — kept the visual fidelity to the Ramp reference for one phase, then removed: nav items that do nothing add cognitive load on review.
 - **Mobile responsive polish** — desktop-first matches the AP workflow (long tables, multi-column filters, line-item editing) which is hard to compress onto a phone screen meaningfully. The layout degrades gracefully on a tablet; a true mobile pass would require its own design exploration.
 
 ## Architecture + data model decisions
@@ -96,7 +95,7 @@ Five-minute path to see the system end-to-end:
 4. Switch to **Approver** via the top-bar switcher. Approve the bill → Payment row appears in the panel below.
 5. Switch back to **Admin**. From the **For payment** tab, schedule the payment, release it, then mark it paid.
 6. Open the **Activity** tab on the detail page → full audit trail with actor + role + metadata per row.
-7. Multi-select a few bills in the index → use the bulk toolbar (approve / archive / edit) and watch the summary toast + Details modal.
+7. Multi-select a few bills in the index → use the bulk toolbar (the available actions depend on the tab and your role: submit / approve / reject / archive / edit / schedule / release / mark-as-paid / retry / cancel) and watch the summary toast + Details modal.
 8. Click **Export → CSV** to download the current filtered view.
 
 ## Repository
@@ -114,7 +113,7 @@ Two layers:
 - **Unit tests** — fast, no I/O, mock `PrismaService`. Run with `pnpm --filter backend test` and `pnpm --filter frontend test`.
 - **End-to-end tests** — boot the full Nest app against a real Postgres connection on an isolated `test_e2e` schema (the dev `public` schema is never touched). Run with `pnpm --filter backend test:e2e`. Requires Postgres up (`docker compose up -d postgres`).
 
-E2E coverage is deliberately narrow: contract-shape behaviour that mocked-Prisma unit tests can't reach — FK violations translated to `404 *_NOT_FOUND`, terminal-edit guards, decimal-overflow validation, role enforcement end-to-end through HTTP. See `docs/backend.md → Testing strategy` for the full rationale.
+E2E focuses on contract-shape behaviour that mocked-Prisma unit tests can't reach: FK violations translated to `404 *_NOT_FOUND`, terminal-edit guards, decimal-overflow validation, transaction atomicity, and role enforcement end-to-end through HTTP. The two layers carry non-overlapping assertions — see `docs/backend.md → Testing strategy` for the full split.
 
 ## Workspace
 
