@@ -7,9 +7,10 @@
 # across deployments.
 #
 # Routes:
-#   https://{$DOMAIN}/api/*   -> backend:3001   (Nest API)
-#   https://{$DOMAIN}/*       -> frontend:3000  (Next.js standalone)
-#   https://{$STUDIO_SUBDOMAIN}/ -> prisma-studio:5555 (basic-auth gated)
+#   https://{$DOMAIN}/api/*  -> backend:3001   (Nest API)
+#   https://{$DOMAIN}/docs*  -> backend:3001   (Swagger UI — mounted on /docs by main.ts)
+#   https://{$DOMAIN}/*      -> frontend:3000  (Next.js standalone)
+#   https://{$STUDIO_SUBDOMAIN}/ -> prisma-studio:5555 (open — local review tool, do not leave running long-term)
 
 {
 	email {$ADMIN_EMAIL}
@@ -19,6 +20,14 @@
 	encode zstd gzip
 
 	handle /api/* {
+		reverse_proxy backend:3001
+	}
+
+	# Swagger UI lives on the backend at `/docs` (see `backend/src/main.ts`
+	# — `SwaggerModule.setup('docs', app, document)`). Without this
+	# block, the catch-all below would route the request to the Next
+	# frontend, which returns its 404 page instead of the API spec.
+	handle /docs* {
 		reverse_proxy backend:3001
 	}
 
@@ -35,10 +44,6 @@
 
 {$STUDIO_SUBDOMAIN} {
 	encode zstd gzip
-
-	basic_auth {
-		{$STUDIO_USER} {$STUDIO_PASSWORD_HASH}
-	}
 
 	reverse_proxy prisma-studio:5555
 
